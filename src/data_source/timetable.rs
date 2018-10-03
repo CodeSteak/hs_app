@@ -14,6 +14,12 @@ use select::predicate::*;
 
 use reqwest;
 
+pub fn get_async(course : &str) -> impl FnOnce() -> Result<Vec<Vec<String>>, String> {
+    let course_copy = course.to_string();
+
+    dirty_err_async(DEFAULT_TIMEOUT_SEC, move || get(&course_copy))
+}
+
 pub fn get(course : &str) -> Result<Vec<Vec<String>>, DirtyError> {
     let index = download_timetable_index()?;
 
@@ -99,7 +105,10 @@ fn download_timetable_index() -> Result<LowercaseCourseToUrl, DirtyError> {
                 .collect::<Vec<String>>();
 
             match &parts[..] {
-                [link, name] => Some((name.to_lowercase(), link.clone())),
+                [link, name] => Some((
+                    name.to_lowercase(),
+                    link.replace("http://", "https://")
+                )),
                 _ => None
             }
         }).collect();

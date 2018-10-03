@@ -8,48 +8,48 @@ extern crate select;
 extern crate prettytable;
 
 mod util;
-use util::*;
+mod data_source;
 
 use prettytable::{Table, Row, format};
 
-mod data_source;
 
-fn main() -> Result<(), DirtyError> {
+fn main() -> Result<(), String> {
     let my_course = "AI3"; //TODO: Proper Commandline interface
+
+    let format = make_table_fmt();
+
 
     println!("HS-OG Timetable for {}", my_course);
     println!("\t ver. 0.0.1 pre-alpha");
-
-
-    // Get
-    let my_timetable_fut = dirty_err_async(20, move ||{
-        data_source::timetable::get(my_course)
-    });
-
-    let mensa_plan_fut = dirty_err_async(20,||
-        data_source::canteen_plan::get()
-    );
-
-    let my_timetable = match my_timetable_fut() {
-        Ok(o) => o,
-        Err(e) => {
-            eprintln!("Error: {}", e);
-            Default::default()
-        }
-    };
-
-    let mensa_plan = match mensa_plan_fut() {
-        Ok(o) => o,
-        Err(e) => {
-            eprintln!("Error: {}", e);
-            Default::default()
-        }
-    };
-
-
     println!("\n\n\n");
 
-    let format = make_table_fmt();
+    // Get
+    let my_timetable_future = data_source::timetable::get_async(my_course);
+    let canteen_plan_future = data_source::canteen_plan::get_async();
+
+
+    let canteen_plan = canteen_plan_future().map_err(|e|
+        eprintln!("Error getting canteen plan: \n\t{}", e)
+    ).unwrap_or(Default::default());
+    // Out
+    {
+        let mut table = Table::new();
+
+        table.set_format(format);
+
+        table.set_titles(row![b=>"Mo", "Di", "Mi", "Do", "Fr", "Sa"]);
+
+        for row in canteen_plan.into_iter() {
+            table.add_row(Row::from(row));
+        }
+
+        table.printstd();
+    }
+
+
+    let my_timetable = my_timetable_future().map_err(|e|
+        eprintln!("Error getting timetable: \n\t{}", e)
+    ).unwrap_or(Default::default());
     // Out
     {
         let mut table = Table::new();
@@ -65,20 +65,6 @@ fn main() -> Result<(), DirtyError> {
         table.printstd();
     }
 
-    // Out
-    {
-        let mut table = Table::new();
-
-        table.set_format(format);
-
-        table.set_titles(row![b=>"Mo", "Di", "Mi", "Do", "Fr", "Sa"]);
-
-        for row in mensa_plan.into_iter() {
-            table.add_row(Row::from(row));
-        }
-
-        table.printstd();
-    }
 
     Ok(())
 }

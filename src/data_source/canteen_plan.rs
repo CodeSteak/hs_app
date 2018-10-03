@@ -12,9 +12,9 @@ use reqwest;
 
 const URL : &str = "https://www.swfr.de/de/essen-trinken/speiseplaene/mensa-offenburg/";
 
-//TODO:
-//pub fn get_async() -> FnOnce() -> Result<Vec<Vec<String>>, String> {
-//}
+pub fn get_async() -> impl FnOnce() -> Result<Vec<Vec<String>>, String> {
+    dirty_err_async(DEFAULT_TIMEOUT_SEC, move || get())
+}
 
 pub fn get() -> Result<Vec<Vec<String>>, DirtyError> {
 
