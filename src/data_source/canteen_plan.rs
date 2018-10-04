@@ -5,18 +5,23 @@ use ::util::*;
 use std::io;
 use std::io::Read;
 
+use std::collections::HashMap;
+
 use select::document::Document;
 use select::predicate::*;
 
 use reqwest;
+use chrono::{Date, Local};
+
+type CanteenPlan = HashMap<Date<Local>, Vec<String>>;
 
 const URL : &str = "https://www.swfr.de/de/essen-trinken/speiseplaene/mensa-offenburg/";
 
-pub fn get_async() -> impl FnOnce() -> Result<Vec<Vec<String>>, String> {
+pub fn get_async() -> impl FnOnce() -> Result<CanteenPlan, String> {
     dirty_err_async(DEFAULT_TIMEOUT_SEC, move || get())
 }
 
-pub fn get() -> Result<Vec<Vec<String>>, DirtyError> {
+pub fn get() -> Result<CanteenPlan, DirtyError> {
 
     let res = reqwest::get(URL)?;
 
@@ -35,6 +40,8 @@ pub fn get() -> Result<Vec<Vec<String>>, DirtyError> {
 
     let dom = Document::from(&*html);
 
+    let mut date = last_monday();
+
     let menu_plan = dom
         .find(Class("tab-content"))
         .flat_map(|maybe_plan| {
@@ -52,5 +59,15 @@ pub fn get() -> Result<Vec<Vec<String>>, DirtyError> {
                 }).collect::<Vec<String>>()
             })
         }).collect::<Vec<Vec<String>>>();
-    Ok(menu_plan.transpose())
+
+    let daily_menu_plan : CanteenPlan = menu_plan
+        .into_iter()
+        .map(|d| {
+            let ret = (date.clone(), d);
+            date = date.succ();
+            ret
+        }).collect();
+
+
+    Ok(daily_menu_plan)
 }

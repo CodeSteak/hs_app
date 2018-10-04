@@ -1,7 +1,22 @@
 extern crate std;
 use std::error::Error;
+use chrono::{Date, Local, Weekday, Datelike};
 
 pub type DirtyError = Box<Error>;
+
+pub(crate) fn last_monday() -> Date<Local> {
+    let mut now = Local::today();
+
+    for _ in 0..8 {
+        if now.weekday() == Weekday::Mon {
+            return now;
+        }
+
+        now = now.pred();
+    }
+
+    panic!("No monday found in this Week?!");
+}
 
 pub(crate) trait Fixable{
     /// Deuglyfies a thing.

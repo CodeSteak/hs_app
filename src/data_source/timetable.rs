@@ -13,14 +13,17 @@ use select::document::Document;
 use select::predicate::*;
 
 use reqwest;
+use chrono::{Date, Local};
 
-pub fn get_async(course : &str) -> impl FnOnce() -> Result<Vec<Vec<String>>, String> {
+type Timetable = HashMap<Date<Local>, Vec<String>>;
+
+pub fn get_async(course : &str) -> impl FnOnce() -> Result<Timetable, String> {
     let course_copy = course.to_string();
 
     dirty_err_async(DEFAULT_TIMEOUT_SEC, move || get(&course_copy))
 }
 
-pub fn get(course : &str) -> Result<Vec<Vec<String>>, DirtyError> {
+pub fn get(course : &str) -> Result<Timetable, DirtyError> {
     let index = download_timetable_index()?;
 
     let course_url = index.get(&course.to_lowercase()).ok_or_else(||
@@ -32,7 +35,7 @@ pub fn get(course : &str) -> Result<Vec<Vec<String>>, DirtyError> {
 
 /// Downloads the timetable for a given url. This is blocking.
 /// Returns Days as Columns, Hours as Rows.
-fn download_timetable_from_url(url : &str) -> Result<Vec<Vec<String>>, DirtyError> {
+fn download_timetable_from_url(url : &str) -> Result<Timetable, DirtyError> {
     let res = reqwest::get(url)?;
 
     if res.status() != 200 {
@@ -52,11 +55,20 @@ fn download_timetable_from_url(url : &str) -> Result<Vec<Vec<String>>, DirtyErro
         io::Error::new(io::ErrorKind::InvalidData, "Expected timetable class in html")
     )?;
 
-    let timetable = timetable_node.find(Attr("scope", "row")).map(|row| {
+    let mut date = last_monday();
+
+    let timetable : Timetable = timetable_node.find(Attr("scope", "row")).map(|row| {
         row.find((Class("lastcol")).and(Name("td"))).map(|column| {
             column.text().ihh_fix()
         }).collect::<Vec<String>>()
-    }).collect::<Vec<Vec<String>>>();
+    }).collect::<Vec<Vec<String>>>()
+        .transpose()
+        .into_iter()
+        .map(|d|{
+            let ret = (date.clone(), d);
+            date = date.succ();
+            ret
+        }).collect();
 
     Ok(timetable)
 }
