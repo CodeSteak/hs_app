@@ -17,25 +17,49 @@ use chrono::{Date, Local};
 
 type Timetable = HashMap<Date<Local>, Vec<String>>;
 
-pub fn get_async(course : &str) -> impl FnOnce() -> Result<Timetable, String> {
+use std::sync::mpsc::Receiver;
+pub fn get_async(q : Query, course : &str) -> Receiver<Result<Timetable, String>> {
     let course_copy = course.to_string();
 
-    dirty_err_async(DEFAULT_TIMEOUT_SEC, move || get(&course_copy))
+    dirty_err_async( move || get(q,&course_copy))
 }
 
-pub fn get(course : &str) -> Result<Timetable, DirtyError> {
+pub enum Query {
+    ThisWeek,
+    NextWeek,
+}
+
+pub fn get(q : Query, course : &str) -> Result<Timetable, DirtyError> {
     let index = download_timetable_index()?;
 
     let course_url = index.get(&course.to_lowercase()).ok_or_else(||
         io::Error::new(io::ErrorKind::InvalidInput, "Course not found.")
     )?;
 
-    download_timetable_from_url(course_url)
+    match q {
+        Query::ThisWeek => {
+            let mut date = last_monday();
+            download_timetable_from_url(&date,
+                                        course_url
+            )
+        }
+        Query::NextWeek => {
+            let mut date = last_monday();
+            for _ in 0..7 {
+                date = date.succ();
+            }
+            download_timetable_from_url(&date,
+                                        &course_url.replace("week=0","week=1")
+            )
+        }
+    }
 }
 
 /// Downloads the timetable for a given url. This is blocking.
 /// Returns Days as Columns, Hours as Rows.
-fn download_timetable_from_url(url : &str) -> Result<Timetable, DirtyError> {
+fn download_timetable_from_url(start_date : &Date<Local>, url : &str) -> Result<Timetable, DirtyError> {
+    let mut date = start_date.clone();
+
     let res = reqwest::get(url)?;
 
     if res.status() != 200 {
@@ -55,7 +79,6 @@ fn download_timetable_from_url(url : &str) -> Result<Timetable, DirtyError> {
         io::Error::new(io::ErrorKind::InvalidData, "Expected timetable class in html")
     )?;
 
-    let mut date = last_monday();
 
     let timetable : Timetable = timetable_node.find(Attr("scope", "row")).map(|row| {
         row.find((Class("lastcol")).and(Name("td"))).map(|column| {

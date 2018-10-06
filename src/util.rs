@@ -54,14 +54,13 @@ impl<T : Default+Clone> TransposeAble for Vec<Vec<T>> {
     }
 }
 
-pub(crate) fn dirty_err_async<F,T>(timeout_sec : u64, func : F) -> impl FnOnce() -> Result<T,String>
+pub(crate) fn dirty_err_async<F,T>(func : F) -> std::sync::mpsc::Receiver<Result<T, String>>
     where
         F : 'static + Send + FnOnce() -> Result<T,DirtyError>,
         T : 'static + Send {
 
     use std::thread;
     use std::sync::mpsc::channel;
-    use std::time::Duration;
 
     let (sx, rx) = channel();
 
@@ -72,12 +71,6 @@ pub(crate) fn dirty_err_async<F,T>(timeout_sec : u64, func : F) -> impl FnOnce()
         let _ = sx.send(ret);
     });
 
-    move || {
-        let res = rx
-            .recv_timeout(Duration::from_secs(timeout_sec))
-            .map_err(|e| e.to_string())?;
-
-        res
-    }
+    rx
 }
 
