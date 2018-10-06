@@ -374,7 +374,10 @@ impl VText {
         if self.term.is_none() {
             let mut term = VTerm::new(self.width);
             for (color,word) in self.content.iter() {
-                term.write_words_color(word, color.clone())
+                //TODO: Refactor
+                for word in word.split_word_bounds() {
+                    term.write_single_word_color(word, color.clone());
+                }
             }
 
             self.term = Some(term);

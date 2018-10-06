@@ -74,6 +74,8 @@ fn main() -> Result<(), String> {
 
     let mut errors = String::new();
 
+    let mut mode = 0;
+
     loop {
         match my_timetable_rec.try_recv() {
             Ok(Ok(content)) =>
@@ -111,7 +113,13 @@ fn main() -> Result<(), String> {
                 (),
         }
 
-        render(&today, &canteen_plan, &my_timetable);
+        if mode % 3 == 0 {
+            render(&today, &canteen_plan, &my_timetable);
+        }else if mode % 3 == 1 {
+            table_render(&today, &canteen_plan);
+        }else {
+            table_render(&today, &my_timetable);
+        }
 
         if Some(SIGINT) == trap.wait(Instant::now()) {
             break;
@@ -123,6 +131,15 @@ fn main() -> Result<(), String> {
             },
             Some(b'h') | Some(b'H') => {
                 today = today.pred()
+            },
+            Some(b'n') | Some(b'N') => {
+                today = today.succ()
+            },
+            Some(b'p') | Some(b'P') => {
+                today = today.pred()
+            },
+            Some(b'm') | Some(b'M') => {
+                mode += 1;
             },
             Some(b'q') | Some(b'Q') => {
                 break;
@@ -210,7 +227,7 @@ fn render(today : &Date<Local>, canteen : &HashMap<Date<Local>, Vec<String>>, ti
         canteen_widget.push(
             Margin((1,0),
                    Backgound(if i % 2 == 1 {BASE2} else {BASE3},
-                             Spacer::new(
+                             Center::new(
                                  Margin((2,0),
                                         VText::colored(BASE00, d)
                                  )
@@ -237,8 +254,17 @@ fn render(today : &Date<Local>, canteen : &HashMap<Date<Local>, Vec<String>>, ti
                            Margin((2,1),
                                   VText::colored(BASE01, &info_str))));
 
+    let help = Margin((4,2), VText::colored(BASE01,"\
+    HELP
+
+    q => Quit
+    m => Modus
+    ▶ => Next
+    ◀ => Prev
+    "));
+
     let grid_root = GridH::new()
-        .add(Center::new(Margin((2,1),heading)))
+        .add(Center::new(Margin((2,1),GridV::new().add(heading).add(help))))
         .add(Center::new(Margin((2,1), table_widget)))
         .add(Center::new(Margin((2,1), canteen_widget)));
 
@@ -246,6 +272,55 @@ fn render(today : &Date<Local>, canteen : &HashMap<Date<Local>, Vec<String>>, ti
         Spacer::new(
             grid_root
         )
+    );
+
+    let (w, h) = query_terminal_size_and_reset().unwrap_or((100, 100));
+    root.try_set_size(w as isize, h as isize - 1);
+    root.render_to_stdout();
+}
+
+
+fn table_render(start : &Date<Local>, content : &HashMap<Date<Local>, Vec<String>>) {
+
+    use ui::*;
+    use ui::termutil::*;
+
+    use solarized::*;
+
+    let mut today = start.clone();
+
+    let mut i = 0;
+    let mut grid_root = GridH::new();
+
+    for _ in 0..7 {
+        let info_str = format!("{:10}\n{:02}.{:02}.{}",
+                               german_weekday(today.weekday()),
+                               today.day(), today.month(), today.year());
+
+        let mut table_widget = GridV::new().add(
+            Center::new(
+                VText::colored(BASE2, &info_str)
+            )
+        );
+
+        for d in content.get(&today).unwrap_or(&Default::default()) {
+            i += 1;
+            table_widget.push(
+                       Backgound(if i % 2 == 1 { BASE2 } else { BASE3 },
+                                 Spacer::new(VText::colored(BASE00, d)
+                                 )
+                )
+            );
+        }
+
+        grid_root.push(table_widget);
+        today = today.succ();
+    }
+
+    let mut root = Backgound(GREEN,
+                             Spacer::new(
+                                 grid_root
+                             )
     );
 
     let (w, h) = query_terminal_size_and_reset().unwrap_or((100, 100));
