@@ -207,7 +207,7 @@ fn render(
 
     let info_str = format!(
         "\
-    Hochschul-App {}\n\n\
+    Hochschul-App \nv{}\n\n\
     {:10} {:02}.{:02}.{}{}
     ",
         VERSION,
