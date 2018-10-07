@@ -43,19 +43,19 @@ struct Theme {
 }
 
 struct AppState {
-    course : String,
+    course: String,
 
-    theme : Theme,
-    day : Date<Local>,
+    theme: Theme,
+    day: Date<Local>,
 
-    canteen : HashMap<Date<Local>, Vec<String>>,
-    timetable : HashMap<Date<Local>, Vec<String>>,
+    canteen: HashMap<Date<Local>, Vec<String>>,
+    timetable: HashMap<Date<Local>, Vec<String>>,
 
-    loading : (usize, usize),
+    loading: (usize, usize),
 
-    errors : Vec<String>,
+    errors: Vec<String>,
 
-    display_mode : usize,
+    display_mode: usize,
 }
 
 enum Message {
@@ -67,8 +67,8 @@ enum Message {
 }
 
 use std::sync::Mutex;
-static mut SIG_CHANNEL : Option<Mutex<mpsc::Sender<Message>>> = None;
-extern "C" fn sigint(_ : i32) {
+static mut SIG_CHANNEL: Option<Mutex<mpsc::Sender<Message>>> = None;
+extern "C" fn sigint(_: i32) {
     unsafe {
         if let Some(ref mutex) = SIG_CHANNEL {
             let inner = mutex.lock().unwrap();
@@ -90,10 +90,10 @@ fn main() -> Result<(), String> {
     register_for_sigint(sigint);
 
     let mut state = AppState {
-        course : "AI3".to_string(),
+        course: "AI3".to_string(),
 
-        theme :  select_colorscheme(),
-        day : {
+        theme: select_colorscheme(),
+        day: {
             let mut today = chrono::Local::today();
 
             if today.weekday() == chrono::Weekday::Sat {
@@ -107,20 +107,20 @@ fn main() -> Result<(), String> {
             today
         },
 
-        canteen : Default::default(),
-        timetable : Default::default(),
+        canteen: Default::default(),
+        timetable: Default::default(),
 
-        loading : (0,0),
+        loading: (0, 0),
 
-        errors : vec![],
+        errors: vec![],
 
-        display_mode : 0,
+        display_mode: 0,
     };
 
-    setup_datasources( &state, &outgoing);
+    setup_datasources(&state, &outgoing);
     setup_keyboard_datasource(&outgoing);
 
-    let mut size : (isize, isize) = (80,40);
+    let mut size: (isize, isize) = (80, 40);
 
     loop {
         // render;
@@ -153,62 +153,54 @@ fn main() -> Result<(), String> {
 
             Message::CanteenData(data) => {
                 state.canteen.extend(data);
-            },
+            }
             Message::TimetableData(data) => {
                 state.timetable.extend(data);
+            }
 
-            },
-
-            Message::Resize(w,h) => {
+            Message::Resize(w, h) => {
                 unimplemented!();
             }
         }
-
     }
-    
+
     println!("Bye!");
     term_unsetup();
     Ok(())
 }
 
-
-fn handle_key(state : &mut AppState, key : ui::keys::Key) -> bool {
+fn handle_key(state: &mut AppState, key: ui::keys::Key) -> bool {
     use ui::keys::Key;
 
     match key {
-        Key::Char('m') | Key::Char('M') =>
-            state.display_mode += 1,
+        Key::Char('m') | Key::Char('M') => state.display_mode += 1,
 
-        Key::Right | Key::Char('l') | Key::Char('L') =>
-            state.day = state.day.succ(),
+        Key::Right | Key::Char('l') | Key::Char('L') => state.day = state.day.succ(),
 
-        Key::Left | Key::Char('h') | Key::Char('H') =>
-            state.day = state.day.pred(),
+        Key::Left | Key::Char('h') | Key::Char('H') => state.day = state.day.pred(),
 
-        Key::Ctrl(_) | Key::ESC | Key::Char('q') | Key::Char('Q') =>
-            return true,
+        Key::Ctrl(_) | Key::ESC | Key::Char('q') | Key::Char('Q') => return true,
 
         Key::Interupt => {
             eprintln!("Interupt!"); //TODO REMOVE ME!
             if ui::termutil::was_sigint() {
                 return true;
             }
-        },
+        }
         _ => (),
     }
 
     false
 }
 
-fn handle_error(state : &mut AppState, err : String) {
+fn handle_error(state: &mut AppState, err: String) {
     state.errors.push(err);
 }
 
-fn setup_keyboard_datasource(outgoing : &mpsc::Sender<Message>) {
+fn setup_keyboard_datasource(outgoing: &mpsc::Sender<Message>) {
     let outgoing_cp = outgoing.clone();
 
     thread::spawn(move || {
-
         let mut key_buffer = [0u8; 16];
         let mut key_buffer_filled = 0usize;
 
@@ -217,82 +209,48 @@ fn setup_keyboard_datasource(outgoing : &mpsc::Sender<Message>) {
             key_buffer = r;
             key_buffer_filled = f;
 
-            outgoing_cp.send(Message::Key(k) ).unwrap();
+            outgoing_cp.send(Message::Key(k)).unwrap();
         }
     });
 }
 
-fn setup_datasources(state : &AppState, outgoing : &mpsc::Sender<Message>) {
+fn setup_datasources(state: &AppState, outgoing: &mpsc::Sender<Message>) {
     message_adapter(
         data_source::timetable::get_async(data_source::timetable::Query::ThisWeek, &state.course),
         &outgoing,
-        |r| {
-            match r {
-                Ok(content) => Message::TimetableData(content),
-                Err(s) => Message::Error(s),
-            }
-        }
+        |r| match r {
+            Ok(content) => Message::TimetableData(content),
+            Err(s) => Message::Error(s),
+        },
     );
 
     message_adapter(
         data_source::timetable::get_async(data_source::timetable::Query::NextWeek, &state.course),
         &outgoing,
-        |r| {
-            match r {
-                Ok(content) => Message::TimetableData(content),
-                Err(s) => Message::Error(s),
-            }
-        }
+        |r| match r {
+            Ok(content) => Message::TimetableData(content),
+            Err(s) => Message::Error(s),
+        },
     );
 
     message_adapter(
         data_source::canteen_plan::get_async(data_source::canteen_plan::Query::ThisWeek),
         &outgoing,
-        |r| {
-            match r {
-                Ok(content) => Message::CanteenData(content),
-                Err(s) => Message::Error(s),
-            }
-        }
+        |r| match r {
+            Ok(content) => Message::CanteenData(content),
+            Err(s) => Message::Error(s),
+        },
     );
 
     message_adapter(
         data_source::canteen_plan::get_async(data_source::canteen_plan::Query::NextWeek),
         &outgoing,
-        |r| {
-            match r {
-                Ok(content) => Message::CanteenData(content),
-                Err(s) => Message::Error(s),
-            }
-        }
+        |r| match r {
+            Ok(content) => Message::CanteenData(content),
+            Err(s) => Message::Error(s),
+        },
     );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 fn show_error(theme: &Theme, err: &String) {
     use std::io::Read;
@@ -317,7 +275,7 @@ fn show_error(theme: &Theme, err: &String) {
     let mut root = Backgound(theme.background, error);
 
     //let (w, h) = query_terminal_size_and_reset().unwrap_or((100, 100));
-   // root.try_set_size(w as isize, h as isize - 1);
+    // root.try_set_size(w as isize, h as isize - 1);
     root.render_to_stdout();
 }
 
@@ -350,10 +308,7 @@ fn select_colorscheme() -> Theme {
 }
 
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
-fn render(
-    size : (isize, isize),
-    state : &AppState,
-) {
+fn render(size: (isize, isize), state: &AppState) {
     use ui::termutil::*;
     use ui::*;
 
@@ -453,13 +408,16 @@ fn render(
     root.render_to_stdout();
 }
 
-fn table_render(size : (isize, isize), state : &AppState, content: &HashMap<Date<Local>, Vec<String>>) {
+fn table_render(
+    size: (isize, isize),
+    state: &AppState,
+    content: &HashMap<Date<Local>, Vec<String>>,
+) {
     use ui::termutil::*;
     use ui::*;
 
     let theme = &state.theme;
     let mut today = state.day.clone();
-
 
     let mut i = 0;
     let mut grid_root = GridH::new();
@@ -497,7 +455,7 @@ fn table_render(size : (isize, isize), state : &AppState, content: &HashMap<Date
 
     let mut root = Backgound(theme.background, Center::new(grid_root));
 
-    let (w, h) = size;//query_terminal_size_and_reset().unwrap_or((100, 100));
+    let (w, h) = size; //query_terminal_size_and_reset().unwrap_or((100, 100));
     root.try_set_size(w as isize, h as isize - 1);
     root.render_to_stdout();
 }

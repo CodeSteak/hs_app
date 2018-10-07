@@ -83,26 +83,22 @@ where
     rx
 }
 
-pub(crate) fn message_adapter<F,I,O>(from : Receiver<I>, to : &Sender<O>, map_fn : F)
+pub(crate) fn message_adapter<F, I, O>(from: Receiver<I>, to: &Sender<O>, map_fn: F)
 where
-    I : 'static + Send,
-    O : 'static + Send,
-    F : 'static + Send + Fn(I) -> O {
-
+    I: 'static + Send,
+    O: 'static + Send,
+    F: 'static + Send + Fn(I) -> O,
+{
     let to_cpy = to.clone();
 
     use std::thread;
-    thread::spawn(move || {
-        loop {
-            match from.recv() {
-                Ok(o) => {
-                    match to_cpy.send(map_fn(o)) {
-                        Ok(_) => (),
-                        Err(_) => return,
-                    }
-                },
-                _ => return,
-            }
+    thread::spawn(move || loop {
+        match from.recv() {
+            Ok(o) => match to_cpy.send(map_fn(o)) {
+                Ok(_) => (),
+                Err(_) => return,
+            },
+            _ => return,
         }
     });
 }

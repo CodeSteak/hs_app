@@ -1,9 +1,9 @@
 use std::io;
 use std::io::{Read, Write};
 
+use nix::sys::signal;
 use nix::sys::termios;
 use nix::unistd;
-use nix::sys::signal;
 
 pub fn term_setup() -> bool {
     println!("\x1B[?25h");
@@ -33,26 +33,19 @@ pub fn term_setup() -> bool {
     ret
 }
 
-pub fn register_for_sigint(handler : extern fn(c_int)) {
+pub fn register_for_sigint(handler: extern "C" fn(c_int)) {
     use nix::sys::signal::*;
     let mut sigint = signal::SigSet::empty();
     let mut flags = SaFlags::empty();
 
-    let mut action = SigAction::new(
-        SigHandler::Handler(handler),
-        flags,
-        sigint
-    );
+    let mut action = SigAction::new(SigHandler::Handler(handler), flags, sigint);
 
     unsafe {
-        let _ = sigaction(
-            signal::SIGINT,
-            &action
-        );
+        let _ = sigaction(signal::SIGINT, &action);
     }
 }
 
-static mut SIGINT : bool = false;
+static mut SIGINT: bool = false;
 
 use nix::libc::c_int;
 extern "C" fn set_sigint(_: c_int) {
@@ -61,7 +54,6 @@ extern "C" fn set_sigint(_: c_int) {
         SIGINT = true;
     }
 }
-
 
 pub fn was_sigint() -> bool {
     unsafe {
@@ -82,7 +74,7 @@ fn clear_buffer() -> Option<()> {
         if fd[0].revents()? == EventFlags::POLLIN {
             let mut buf = [0u8; 1024];
             let _void = read(1, &mut buf);
-        }else {
+        } else {
             return Some(());
         }
     }
