@@ -22,6 +22,7 @@ pub enum Color {
     BrightMagenta,
     BrightCyan,
     BrightWhite,
+    Bits8(u8),
     Custom(u8, u8, u8),
 }
 
@@ -59,22 +60,23 @@ impl Color {
         let stat = match self {
             Color::None => "\x1B[0m",
 
-            Color::Black => "\x1B[0;30m",
-            Color::Red => "\x1B[0;31m",
-            Color::Green => "\x1B[0;32m",
-            Color::Yellow => "\x1B[0;33m",
-            Color::Blue => "\x1B[0;34m",
-            Color::Magenta => "\x1B[0;35m",
-            Color::Cyan => "\x1B[0;36m",
-            Color::White => "\x1B[0;37m",
-            Color::BrightBlack => "\x1B[1;30m",
-            Color::BrightRed => "\x1B[1;31m",
-            Color::BrightGreen => "\x1B[1;32m",
-            Color::BrightYellow => "\x1B[1;33m",
-            Color::BrightBlue => "\x1B[1;34m",
-            Color::BrightMagenta => "\x1B[1;35m",
-            Color::BrightCyan => "\x1B[1;36m",
-            Color::BrightWhite => "\x1B[1;37m",
+            Color::Black => "\x1B[30m",
+            Color::Red => "\x1B[31m",
+            Color::Green => "\x1B[32m",
+            Color::Yellow => "\x1B[33m",
+            Color::Blue => "\x1B[34m",
+            Color::Magenta => "\x1B[35m",
+            Color::Cyan => "\x1B[36m",
+            Color::White => "\x1B[37m",
+            Color::BrightBlack => "\x1B[90m",
+            Color::BrightRed => "\x1B[91m",
+            Color::BrightGreen => "\x1B[92m",
+            Color::BrightYellow => "\x1B[93m",
+            Color::BrightBlue => "\x1B[94m",
+            Color::BrightMagenta => "\x1B[95m",
+            Color::BrightCyan => "\x1B[96m",
+            Color::BrightWhite => "\x1B[97m",
+            Color::Bits8(c) => return StringLike::Dyn(format!("\x1B[38;5;{}m", c)),
             Color::Custom(r, g, b) => {
                 return StringLike::Dyn(format!("\x1B[38;2;{};{};{}m", r, g, b))
             }
@@ -87,22 +89,23 @@ impl Color {
         let stat = match self {
             Color::None => "\x1B[0m",
 
-            Color::Black => "\x1B[0;40m",
-            Color::Red => "\x1B[0;41m",
-            Color::Green => "\x1B[0;42m",
-            Color::Yellow => "\x1B[0;43m",
-            Color::Blue => "\x1B[0;44m",
-            Color::Magenta => "\x1B[0;45m",
-            Color::Cyan => "\x1B[0;46m",
-            Color::White => "\x1B[0;47m",
-            Color::BrightBlack => "\x1B[1;40m",
-            Color::BrightRed => "\x1B[1;41m",
-            Color::BrightGreen => "\x1B[1;42m",
-            Color::BrightYellow => "\x1B[1;43m",
-            Color::BrightBlue => "\x1B[1;44m",
-            Color::BrightMagenta => "\x1B[1;45m",
-            Color::BrightCyan => "\x1B[1;46m",
-            Color::BrightWhite => "\x1B[1;47m",
+            Color::Black => "\x1B[40m",
+            Color::Red => "\x1B[41m",
+            Color::Green => "\x1B[42m",
+            Color::Yellow => "\x1B[43m",
+            Color::Blue => "\x1B[44m",
+            Color::Magenta => "\x1B[45m",
+            Color::Cyan => "\x1B[46m",
+            Color::White => "\x1B[47m",
+            Color::BrightBlack => "\x1B[100m",
+            Color::BrightRed => "\x1B[101m",
+            Color::BrightGreen => "\x1B[102m",
+            Color::BrightYellow => "\x1B[103m",
+            Color::BrightBlue => "\x1B[104m",
+            Color::BrightMagenta => "\x1B[105m",
+            Color::BrightCyan => "\x1B[106m",
+            Color::BrightWhite => "\x1B[107m",
+            Color::Bits8(c) => return StringLike::Dyn(format!("\x1B[48;5;{}m", c)),
             Color::Custom(r, g, b) => {
                 return StringLike::Dyn(format!("\x1B[48;2;{};{};{}m", r, g, b))
             }
@@ -235,6 +238,10 @@ impl<W: Widget> Widget for VBox<W> {
             return None;
         }
 
+        if x < 0 || y < 0 {
+            return None;
+        }
+
         let xpos = if x == 0 {
             Pos::Begin
         } else if x == w - 1 {
@@ -258,7 +265,7 @@ impl<W: Widget> Widget for VBox<W> {
 
             (Pos::Begin, Pos::Middle) => self.0[3],
             (Pos::Middle, Pos::Middle) => {
-                return self.2.get(x - 1, y - 1);
+                return self.2.get(x - 1, y - 1).unwrap_or(VChar::SPACE).into();
             }
             (Pos::End, Pos::Middle) => self.0[5],
 
@@ -286,6 +293,10 @@ impl<W: Widget> Widget for Margin<W> {
     fn get(&mut self, x: isize, y: isize) -> Option<VChar> {
         let (w, h) = self.size();
 
+        if x < 0 || y < 0 || x >= w || y >= h {
+            return None;
+        }
+
         let xpos = if x < (self.0).0 {
             Pos::Begin
         } else if x >= w - (self.0).0 {
@@ -303,8 +314,12 @@ impl<W: Widget> Widget for Margin<W> {
         };
 
         match (xpos, ypos) {
-            (Pos::Middle, Pos::Middle) => self.1.get(x - (self.0).0, y - (self.0).1),
-            (_, _) => None,
+            (Pos::Middle, Pos::Middle) => self
+                .1
+                .get(x - (self.0).0, y - (self.0).1)
+                .unwrap_or(VChar::SPACE)
+                .into(),
+            (_, _) => Some(VChar::SPACE),
         }
     }
 }
@@ -327,7 +342,7 @@ impl<W: Widget> Widget for Backgound<W> {
                 }
                 Some(c)
             }
-            None => Some(VChar::full(' ', Color::None, self.0)),
+            None => None,
         }
     }
 }
@@ -449,7 +464,7 @@ impl<W: Widget> Widget for Spacer<W> {
     }
 
     fn get(&mut self, mut x: isize, y: isize) -> Option<VChar> {
-        self.inner.get(x, y)
+        self.inner.get(x, y).unwrap_or(VChar::SPACE).into()
     }
 }
 
@@ -505,7 +520,10 @@ impl<W: Widget> Widget for Center<W> {
         let offsetx = self.w - self.cw;
         let offsety = self.h - self.ch;
 
-        self.inner.get(x - offsetx / 2, y - offsety / 2)
+        self.inner
+            .get(x - offsetx / 2, y - offsety / 2)
+            .unwrap_or(VChar::SPACE)
+            .into()
     }
 }
 

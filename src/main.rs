@@ -6,7 +6,6 @@ extern crate chrono;
 extern crate nix;
 extern crate reqwest;
 extern crate select;
-extern crate signal;
 extern crate unicode_segmentation;
 
 use chrono::Date;
@@ -19,15 +18,64 @@ mod data_source;
 mod ui;
 mod util;
 
+use util::*;
+
 use std::thread;
 use std::time::{Duration, Instant};
 
 use nix::sys::signal::SIGINT;
-use signal::trap::Trap;
 
 use std::collections::HashMap;
 
+use std::sync::mpsc;
+
 type State = u64;
+
+use ui::Color;
+struct Theme {
+    background: Color,
+
+    textback1: Color,
+    textback2: Color,
+
+    text: Color,
+    heading: Color,
+}
+
+struct AppState {
+    course : String,
+
+    theme : Theme,
+    day : Date<Local>,
+
+    canteen : HashMap<Date<Local>, Vec<String>>,
+    timetable : HashMap<Date<Local>, Vec<String>>,
+
+    loading : (usize, usize),
+
+    errors : Vec<String>,
+
+    display_mode : usize,
+}
+
+enum Message {
+    CanteenData(HashMap<Date<Local>, Vec<String>>),
+    TimetableData(HashMap<Date<Local>, Vec<String>>),
+    Error(String),
+    Key(ui::keys::Key),
+    Resize(usize, usize),
+}
+
+use std::sync::Mutex;
+static mut SIG_CHANNEL : Option<Mutex<mpsc::Sender<Message>>> = None;
+extern "C" fn sigint(_ : i32) {
+    unsafe {
+        if let Some(ref mutex) = SIG_CHANNEL {
+            let inner = mutex.lock().unwrap();
+            let _ = inner.send(Message::Key(ui::keys::Key::ESC));
+        }
+    }
+}
 
 fn main() -> Result<(), String> {
     use ui::termutil::*;
@@ -35,143 +83,284 @@ fn main() -> Result<(), String> {
 
     term_setup();
 
-    let trap = Trap::trap(&[SIGINT]);
-
-    let my_course = "AI3"; //TODO: Proper Commandline interface
-
-    let mut today = chrono::Local::today();
-
-    if today.weekday() == chrono::Weekday::Sat {
-        today = today.succ();
+    let (outgoing, incoming) = mpsc::channel::<Message>();
+    unsafe {
+        SIG_CHANNEL = Some(Mutex::new(outgoing.clone()));
     }
+    register_for_sigint(sigint);
 
-    if today.weekday() == chrono::Weekday::Sun {
-        today = today.succ();
-    }
+    let mut state = AppState {
+        course : "AI3".to_string(),
 
-    // Get
-    let my_timetable_rec =
-        data_source::timetable::get_async(data_source::timetable::Query::ThisWeek, my_course);
-    let my_timetable_next_rec =
-        data_source::timetable::get_async(data_source::timetable::Query::NextWeek, my_course);
-    let canteen_plan_rec =
-        data_source::canteen_plan::get_async(data_source::canteen_plan::Query::NextWeek);
-    let canteen_plan_next_rec =
-        data_source::canteen_plan::get_async(data_source::canteen_plan::Query::NextWeek);
+        theme :  select_colorscheme(),
+        day : {
+            let mut today = chrono::Local::today();
 
-    let mut canteen_plan: HashMap<Date<Local>, Vec<String>> = Default::default();
-    let mut my_timetable: HashMap<Date<Local>, Vec<String>> = Default::default();
+            if today.weekday() == chrono::Weekday::Sat {
+                today = today.succ();
+            }
 
-    let mut errors = String::new();
+            if today.weekday() == chrono::Weekday::Sun {
+                today = today.succ();
+            }
 
-    let mut mode = 0;
+            today
+        },
+
+        canteen : Default::default(),
+        timetable : Default::default(),
+
+        loading : (0,0),
+
+        errors : vec![],
+
+        display_mode : 0,
+    };
+
+    setup_datasources( &state, &outgoing);
+    setup_keyboard_datasource(&outgoing);
+
+    let mut size : (isize, isize) = (80,40);
 
     loop {
-        match my_timetable_rec.try_recv() {
-            Ok(Ok(content)) => my_timetable.extend(content),
-            Ok(Err(e)) => errors += &format!("Error getting timetable: \t{}", e),
-            Err(_) => (),
-        }
+        // render;
 
-        match my_timetable_next_rec.try_recv() {
-            Ok(Ok(content)) => my_timetable.extend(content),
-            Ok(Err(e)) => errors += &format!("Error getting timetable of next week: \t{}", e),
-            Err(_) => (),
-        }
+        println!("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"); //TODO: Remove me, after impl. resize;
 
-        match canteen_plan_rec.try_recv() {
-            Ok(Ok(content)) => canteen_plan.extend(content),
-            Ok(Err(e)) => errors += &format!("Error getting canteen plan: \t{}", e),
-            Err(_) => (),
-        }
-
-        match canteen_plan_next_rec.try_recv() {
-            Ok(Ok(content)) => canteen_plan.extend(content),
-            Ok(Err(e)) => errors += &format!("Error getting canteen plan of next week: \t{}", e),
-            Err(_) => (),
-        }
-
-        if mode % 3 == 0 {
-            render(&today, &canteen_plan, &my_timetable);
-        } else if mode % 3 == 1 {
-            table_render(&today, &canteen_plan);
+        if state.display_mode % 3 == 0 {
+            render(size.clone(), &state);
+        } else if state.display_mode % 3 == 2 {
+            table_render(size.clone(), &state, &state.canteen);
         } else {
-            table_render(&today, &my_timetable);
-        }
+            table_render(size.clone(), &state, &state.canteen);
+        };
 
-        if Some(SIGINT) == trap.wait(Instant::now()) {
-            break;
-        }
+        // process
 
-        match step_input() {
-            Some(b'l') | Some(b'L') => today = today.succ(),
-            Some(b'h') | Some(b'H') => today = today.pred(),
-            Some(b'n') | Some(b'N') => today = today.succ(),
-            Some(b'p') | Some(b'P') => today = today.pred(),
-            Some(b'm') | Some(b'M') => {
-                mode += 1;
-            }
-            Some(b'q') | Some(b'Q') => {
+        let msg = match incoming.recv() {
+            Ok(data) => data,
+            Err(e) => {
+                eprintln!("Error :  {}", e.to_string());
                 break;
             }
-            Some(b'\x1B') => match read_ansi() {
-                b'A' | b'C' => today = today.succ(),
-                b'B' | b'D' => today = today.pred(),
-                _ => (),
-            },
-            _ => (),
-        }
-    }
+        };
 
+        match msg {
+            Message::Key(key) => if handle_key(&mut state, key) {
+                break;
+            },
+            Message::Error(e) => handle_error(&mut state, e),
+
+            Message::CanteenData(data) => {
+                state.canteen.extend(data);
+            },
+            Message::TimetableData(data) => {
+                state.timetable.extend(data);
+
+            },
+
+            Message::Resize(w,h) => {
+                unimplemented!();
+            }
+        }
+
+    }
+    
+    println!("Bye!");
     term_unsetup();
     Ok(())
 }
 
-fn step_input() -> Option<u8> {
-    use nix::poll::*;
-    use std::io::Read;
 
-    let mut fd = [PollFd::new(0, EventFlags::POLLIN)];
+fn handle_key(state : &mut AppState, key : ui::keys::Key) -> bool {
+    use ui::keys::Key;
 
-    poll(&mut fd, 100);
+    match key {
+        Key::Char('m') | Key::Char('M') =>
+            state.display_mode += 1,
 
-    if fd[0].revents()? == EventFlags::POLLIN {
-        let mut buf = [0u8; 1];
-        std::io::stdin().read_exact(&mut buf);
+        Key::Right | Key::Char('l') | Key::Char('L') =>
+            state.day = state.day.succ(),
 
-        if buf[0] != 0 {
-            return Some(buf[0]);
-        }
+        Key::Left | Key::Char('h') | Key::Char('H') =>
+            state.day = state.day.pred(),
+
+        Key::Ctrl(_) | Key::ESC | Key::Char('q') | Key::Char('Q') =>
+            return true,
+
+        Key::Interupt => {
+            eprintln!("Interupt!"); //TODO REMOVE ME!
+            if ui::termutil::was_sigint() {
+                return true;
+            }
+        },
+        _ => (),
     }
-    None
+
+    false
 }
 
-fn read_ansi() -> u8 {
-    use std::io::Read;
+fn handle_error(state : &mut AppState, err : String) {
+    state.errors.push(err);
+}
 
-    loop {
-        let mut buf = [0u8; 1];
-        std::io::stdin().read_exact(&mut buf);
+fn setup_keyboard_datasource(outgoing : &mpsc::Sender<Message>) {
+    let outgoing_cp = outgoing.clone();
 
-        if buf[0] == 0 {
-            return 0;
+    thread::spawn(move || {
+
+        let mut key_buffer = [0u8; 16];
+        let mut key_buffer_filled = 0usize;
+
+        loop {
+            let (k, r, f) = ui::keys::advanced_keys(key_buffer, key_buffer_filled);
+            key_buffer = r;
+            key_buffer_filled = f;
+
+            outgoing_cp.send(Message::Key(k) ).unwrap();
         }
-        if (buf[0] as char).is_ascii_alphabetic() {
-            return buf[0];
+    });
+}
+
+fn setup_datasources(state : &AppState, outgoing : &mpsc::Sender<Message>) {
+    message_adapter(
+        data_source::timetable::get_async(data_source::timetable::Query::ThisWeek, &state.course),
+        &outgoing,
+        |r| {
+            match r {
+                Ok(content) => Message::TimetableData(content),
+                Err(s) => Message::Error(s),
+            }
+        }
+    );
+
+    message_adapter(
+        data_source::timetable::get_async(data_source::timetable::Query::NextWeek, &state.course),
+        &outgoing,
+        |r| {
+            match r {
+                Ok(content) => Message::TimetableData(content),
+                Err(s) => Message::Error(s),
+            }
+        }
+    );
+
+    message_adapter(
+        data_source::canteen_plan::get_async(data_source::canteen_plan::Query::ThisWeek),
+        &outgoing,
+        |r| {
+            match r {
+                Ok(content) => Message::CanteenData(content),
+                Err(s) => Message::Error(s),
+            }
+        }
+    );
+
+    message_adapter(
+        data_source::canteen_plan::get_async(data_source::canteen_plan::Query::NextWeek),
+        &outgoing,
+        |r| {
+            match r {
+                Ok(content) => Message::CanteenData(content),
+                Err(s) => Message::Error(s),
+            }
+        }
+    );
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+fn show_error(theme: &Theme, err: &String) {
+    use std::io::Read;
+    use ui::termutil::*;
+    use ui::*;
+
+    unimplemented!();
+
+    let error = GridV::new()
+        .add(Center::new(Backgound(
+            theme.textback1,
+            VBox(
+                DOUBLE_BORDER_BOX,
+                Color::Red,
+                VText::colored(theme.heading, err),
+            ),
+        ))).add(Center::new(VText::colored(
+            theme.heading,
+            "Any Key to continue.",
+        )));
+
+    let mut root = Backgound(theme.background, error);
+
+    //let (w, h) = query_terminal_size_and_reset().unwrap_or((100, 100));
+   // root.try_set_size(w as isize, h as isize - 1);
+    root.render_to_stdout();
+}
+
+fn select_colorscheme() -> Theme {
+    let truecolor = std::env::var("COLORTERM")
+        .map(|s| s.to_lowercase().contains("truecolor"))
+        .unwrap_or(false);
+
+    if truecolor {
+        Theme {
+            background: solarized::CYAN,
+
+            textback1: solarized::BASE3,
+            textback2: solarized::BASE2,
+
+            text: solarized::BASE00,
+            heading: solarized::BASE01,
+        }
+    } else {
+        Theme {
+            background: Color::Cyan,
+
+            textback1: Color::Blue,
+            textback2: Color::Magenta,
+
+            text: Color::White,
+            heading: Color::White,
         }
     }
 }
 
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 fn render(
-    today: &Date<Local>,
-    canteen: &HashMap<Date<Local>, Vec<String>>,
-    timetable: &HashMap<Date<Local>, Vec<String>>,
+    size : (isize, isize),
+    state : &AppState,
 ) {
     use ui::termutil::*;
     use ui::*;
 
-    use solarized::*;
+    let theme = &state.theme;
+    let today = &state.day;
+    let canteen = &state.canteen;
+    let timetable = &state.timetable;
 
     let mut i = 0;
     let mut table_widget = GridV::new();
@@ -180,8 +369,12 @@ fn render(
         table_widget.push(Margin(
             (1, 0),
             Backgound(
-                if i % 2 == 1 { BASE2 } else { BASE3 },
-                Spacer::new(Margin((2, 0), VText::colored(BASE00, d))),
+                if i % 2 == 1 {
+                    theme.textback1
+                } else {
+                    theme.textback2
+                },
+                Spacer::new(Margin((2, 0), VText::colored(theme.text, d))),
             ),
         ));
     }
@@ -193,8 +386,12 @@ fn render(
         canteen_widget.push(Margin(
             (1, 0),
             Backgound(
-                if i % 2 == 1 { BASE2 } else { BASE3 },
-                Center::new(Margin((2, 0), VText::colored(BASE00, d))),
+                if i % 2 == 1 {
+                    theme.textback1
+                } else {
+                    theme.textback2
+                },
+                Center::new(Margin((2, 0), VText::colored(theme.text, d))),
             ),
         ));
     }
@@ -207,7 +404,7 @@ fn render(
 
     let info_str = format!(
         "\
-    Hochschul-App \nv{}\n\n\
+    Hochschul-App \n\tv{}\n\n\
     {:10} {:02}.{:02}.{}{}
     ",
         VERSION,
@@ -221,13 +418,16 @@ fn render(
     let heading = VBox(
         NONE_BOX,
         Color::None,
-        Backgound(BASE2, Margin((2, 1), VText::colored(BASE01, &info_str))),
+        Backgound(
+            theme.textback1,
+            Margin((2, 1), VText::colored(theme.heading, &info_str)),
+        ),
     );
 
     let help = Margin(
         (4, 2),
         VText::colored(
-            BASE01,
+            theme.heading,
             "\
     HELP
 
@@ -246,20 +446,20 @@ fn render(
         ))).add(Center::new(Margin((2, 1), table_widget)))
         .add(Center::new(Margin((2, 1), canteen_widget)));
 
-    let mut root = Backgound(GREEN, Spacer::new(grid_root));
+    let mut root = Backgound(theme.background, Center::new(grid_root));
 
-    let (w, h) = query_terminal_size_and_reset().unwrap_or((100, 100));
-    root.try_set_size(w as isize, h as isize - 1);
+    let (w, h) = size;
+    root.try_set_size(w, h - 1);
     root.render_to_stdout();
 }
 
-fn table_render(start: &Date<Local>, content: &HashMap<Date<Local>, Vec<String>>) {
+fn table_render(size : (isize, isize), state : &AppState, content: &HashMap<Date<Local>, Vec<String>>) {
     use ui::termutil::*;
     use ui::*;
 
-    use solarized::*;
+    let theme = &state.theme;
+    let mut today = state.day.clone();
 
-    let mut today = start.clone();
 
     let mut i = 0;
     let mut grid_root = GridH::new();
@@ -273,23 +473,31 @@ fn table_render(start: &Date<Local>, content: &HashMap<Date<Local>, Vec<String>>
             today.year()
         );
 
-        let mut table_widget = GridV::new().add(Center::new(VText::colored(BASE2, &info_str)));
+        let mut table_widget =
+            GridV::new().add(Center::new(VText::colored(theme.heading, &info_str)));
 
         for d in content.get(&today).unwrap_or(&Default::default()) {
             i += 1;
             table_widget.push(Backgound(
-                if i % 2 == 1 { BASE2 } else { BASE3 },
-                Spacer::new(VText::colored(BASE00, d)),
+                if i % 2 == 1 {
+                    theme.textback1
+                } else {
+                    theme.textback2
+                },
+                Spacer::new(VText::colored(theme.text, d)),
             ));
         }
 
-        grid_root.push(table_widget);
+        if !content.get(&today).is_none() {
+            grid_root.push(table_widget);
+        }
+
         today = today.succ();
     }
 
-    let mut root = Backgound(GREEN, Spacer::new(grid_root));
+    let mut root = Backgound(theme.background, Center::new(grid_root));
 
-    let (w, h) = query_terminal_size_and_reset().unwrap_or((100, 100));
+    let (w, h) = size;//query_terminal_size_and_reset().unwrap_or((100, 100));
     root.try_set_size(w as isize, h as isize - 1);
     root.render_to_stdout();
 }

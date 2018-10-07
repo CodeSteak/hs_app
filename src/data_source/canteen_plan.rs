@@ -15,7 +15,9 @@ use reqwest;
 
 type CanteenPlan = HashMap<Date<Local>, Vec<String>>;
 
-const URL : &str = "https://www.swfr.de/essen-trinken/speiseplaene/mensa-offenburg/?tx_swfrspeiseplan_pi1[weekToShow]=0";
+const URL_THIS_WEEK: &str = "https://www.swfr.de/essen-trinken/speiseplaene/mensa-offenburg/";
+const URL_NEXT_WEEK : &str = "https://www.swfr.de/essen-trinken/speiseplaene/mensa-offenburg/?tx_swfrspeiseplan_pi1[weekToShow]=1";
+
 use std::sync::mpsc::Receiver;
 pub fn get_async(q: Query) -> Receiver<Result<CanteenPlan, String>> {
     dirty_err_async(move || get(q))
@@ -29,8 +31,8 @@ pub enum Query {
 
 pub fn get(q: Query) -> Result<CanteenPlan, DirtyError> {
     let res = match q {
-        Query::ThisWeek => reqwest::get(&(URL.to_string() + "0"))?,
-        Query::NextWeek => reqwest::get(&(URL.to_string() + "1"))?,
+        Query::ThisWeek => reqwest::get(URL_THIS_WEEK)?,
+        Query::NextWeek => reqwest::get(URL_NEXT_WEEK)?,
     };
 
     if res.status() != 200 {
@@ -45,7 +47,7 @@ pub fn get(q: Query) -> Result<CanteenPlan, DirtyError> {
 
     let dom = Document::from(&*html);
 
-    let mut date = last_monday();
+    let mut date = last_monday_or_next_monday_on_sundays();
     if q == Query::NextWeek {
         for _ in 0..7 {
             date = date.succ();
@@ -59,22 +61,14 @@ pub fn get(q: Query) -> Result<CanteenPlan, DirtyError> {
                 day_node
                     .find(Class("menu-info"))
                     .map(|menu| {
-                        let mut full = menu
-                            .text()
+                        menu.text()
                             .ihh_fix()
                             .lines()
                             .map(|s| s.trim())
                             .filter(|s| !s.is_empty())
                             .filter(|l| !l.starts_with("enthält Allergene"))
-                            .fold(String::new(), |a, b| a + " " + &b);
-                        let _alergies = menu
-                            .find(Class("zusatzsstoffe"))
-                            .fold(String::new(), |a, b| {
-                                full = full.replace(b.text().trim(), "");
-                                a + " " + &b.text()
-                            }).ihh_fix();
-
-                        full
+                            .filter(|l| !l.starts_with("Kennzeichnungen"))
+                            .fold(String::new(), |a, b| a + "\n" + &b)
                     }).collect::<Vec<String>>()
             })
         }).collect::<Vec<Vec<String>>>();

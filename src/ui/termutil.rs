@@ -3,6 +3,7 @@ use std::io::{Read, Write};
 
 use nix::sys::termios;
 use nix::unistd;
+use nix::sys::signal;
 
 pub fn term_setup() -> bool {
     println!("\x1B[?25h");
@@ -20,14 +21,78 @@ pub fn term_setup() -> bool {
     term.local_flags &= !termios::LocalFlags::ICANON;
     term.local_flags &= !termios::LocalFlags::ECHO;
 
-    match termios::tcsetattr(0, termios::SetArg::TCSANOW, &term) {
-        Ok(_) => return true,
-        Err(_) => return false,
+    let ret = match termios::tcsetattr(0, termios::SetArg::TCSANOW, &term) {
+        Ok(_) => true,
+        Err(_) => false,
+    };
+
+    let _ = clear_buffer();
+
+    register_for_sigint(set_sigint);
+
+    ret
+}
+
+pub fn register_for_sigint(handler : extern fn(c_int)) {
+    use nix::sys::signal::*;
+    let mut sigint = signal::SigSet::empty();
+    let mut flags = SaFlags::empty();
+
+    let mut action = SigAction::new(
+        SigHandler::Handler(handler),
+        flags,
+        sigint
+    );
+
+    unsafe {
+        let _ = sigaction(
+            signal::SIGINT,
+            &action
+        );
     }
+}
+
+static mut SIGINT : bool = false;
+
+use nix::libc::c_int;
+extern "C" fn set_sigint(_: c_int) {
+    println!("SIGINT");
+    unsafe {
+        SIGINT = true;
+    }
+}
+
+
+pub fn was_sigint() -> bool {
+    unsafe {
+        let ret = SIGINT.clone();
+        SIGINT = false;
+        ret
+    }
+}
+
+fn clear_buffer() -> Option<()> {
+    use nix::poll::*;
+    use nix::unistd::read;
+
+    loop {
+        let mut fd = [PollFd::new(0, EventFlags::POLLIN)];
+        poll(&mut fd, 0);
+
+        if fd[0].revents()? == EventFlags::POLLIN {
+            let mut buf = [0u8; 1024];
+            let _void = read(1, &mut buf);
+        }else {
+            return Some(());
+        }
+    }
+
+    Some(())
 }
 
 pub fn term_unsetup() {
     println!("\x1B[?25h");
+    let _ = clear_buffer();
 }
 
 pub fn query_terminal_size_and_reset() -> io::Result<(u16, u16)> {

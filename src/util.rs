@@ -18,6 +18,16 @@ pub(crate) fn last_monday() -> Date<Local> {
     panic!("No monday found in this Week?!");
 }
 
+pub(crate) fn last_monday_or_next_monday_on_sundays() -> Date<Local> {
+    let now = Local::today();
+
+    if now.weekday() == Weekday::Sun {
+        now.succ()
+    } else {
+        last_monday()
+    }
+}
+
 pub(crate) trait Fixable {
     /// Deuglyfies a thing.
     fn ihh_fix(&self) -> Self;
@@ -53,12 +63,13 @@ impl<T: Default + Clone> TransposeAble for Vec<Vec<T>> {
     }
 }
 
-pub(crate) fn dirty_err_async<F, T>(func: F) -> std::sync::mpsc::Receiver<Result<T, String>>
+use std::sync::mpsc::*;
+
+pub(crate) fn dirty_err_async<F, T>(func: F) -> Receiver<Result<T, String>>
 where
     F: 'static + Send + FnOnce() -> Result<T, DirtyError>,
     T: 'static + Send,
 {
-    use std::sync::mpsc::channel;
     use std::thread;
 
     let (sx, rx) = channel();
@@ -70,4 +81,28 @@ where
     });
 
     rx
+}
+
+pub(crate) fn message_adapter<F,I,O>(from : Receiver<I>, to : &Sender<O>, map_fn : F)
+where
+    I : 'static + Send,
+    O : 'static + Send,
+    F : 'static + Send + Fn(I) -> O {
+
+    let to_cpy = to.clone();
+
+    use std::thread;
+    thread::spawn(move || {
+        loop {
+            match from.recv() {
+                Ok(o) => {
+                    match to_cpy.send(map_fn(o)) {
+                        Ok(_) => (),
+                        Err(_) => return,
+                    }
+                },
+                _ => return,
+            }
+        }
+    });
 }
