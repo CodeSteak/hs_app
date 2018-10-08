@@ -168,6 +168,7 @@ pub trait Widget {
         let mut last_foreground = Color::None;
         let mut last_background = Color::None;
 
+        write!(out, "\x1B[0;0H"); // Goto Home
         write!(out, "{}", last_foreground.to_ansi_foreground());
         write!(out, "{}", last_background.to_ansi_foreground());
 
@@ -209,7 +210,7 @@ pub trait Widget {
 
         let mut stdout = io::stdout();
         write!(stdout, "{}", out);
-        stdout.flush();
+        let _ = stdout.flush();
     }
 }
 
@@ -463,7 +464,7 @@ impl<W: Widget> Widget for Spacer<W> {
         self.inner.try_set_size(w, h);
     }
 
-    fn get(&mut self, mut x: isize, y: isize) -> Option<VChar> {
+    fn get(&mut self, x: isize, y: isize) -> Option<VChar> {
         self.inner.get(x, y).unwrap_or(VChar::SPACE).into()
     }
 }
@@ -497,8 +498,6 @@ impl<W: Widget> Center<W> {
 impl<W: Widget> Widget for Center<W> {
     fn size(&mut self) -> (isize, isize) {
         let (cw, ch) = self.inner.size();
-
-        let (cw, ch) = self.inner.size();
         self.cw = cw;
         self.ch = ch;
 
@@ -516,7 +515,7 @@ impl<W: Widget> Widget for Center<W> {
         self.ch = ch;
     }
 
-    fn get(&mut self, mut x: isize, y: isize) -> Option<VChar> {
+    fn get(&mut self, x: isize, y: isize) -> Option<VChar> {
         let offsetx = self.w - self.cw;
         let offsety = self.h - self.ch;
 
@@ -577,7 +576,7 @@ impl Widget for GridH {
 
     fn get(&mut self, mut x: isize, y: isize) -> Option<VChar> {
         for c in self.content.iter_mut() {
-            let (cw, ch) = c.size();
+            let (cw, _ch) = c.size();
 
             if x < cw {
                 return c.get(x, y);
@@ -639,7 +638,7 @@ impl Widget for GridV {
 
     fn get(&mut self, x: isize, mut y: isize) -> Option<VChar> {
         for c in self.content.iter_mut() {
-            let (cw, ch) = c.size();
+            let (_cw, ch) = c.size();
 
             if y < ch {
                 return c.get(x, y);
@@ -667,7 +666,7 @@ impl Widget for VTerm {
         (w as isize, h as isize)
     }
 
-    fn try_set_size(&mut self, w: isize, h: isize) {
+    fn try_set_size(&mut self, w: isize, _h: isize) {
         for line in self.lines.iter() {
             if line.len() > w as usize {
                 return;

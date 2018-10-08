@@ -1,4 +1,4 @@
-//#![deny(warnings)]
+#![deny(warnings)]
 //^ Warnings as Errors.
 #![allow(dead_code)]
 
@@ -18,24 +18,20 @@ use chrono::Date;
 use chrono::Datelike;
 use chrono::Local;
 
-use std::io;
-
 mod data_source;
 mod ui;
 mod util;
-
 use util::*;
 
 use std::thread;
-use std::time::{Duration, Instant};
-
-use nix::sys::signal::SIGINT;
 
 use std::collections::HashMap;
 
 use std::sync::mpsc;
 
 type State = u64;
+
+const DEFAULT_SIZE: (isize, isize) = (80, 40);
 
 use ui::Color;
 struct Theme {
@@ -69,16 +65,28 @@ enum Message {
     TimetableData(HashMap<Date<Local>, Vec<String>>),
     Error(String),
     Key(ui::keys::Key),
-    Resize(usize, usize),
+    Resize(isize, isize),
 }
 
 use std::sync::Mutex;
-static mut SIG_CHANNEL: Option<Mutex<mpsc::Sender<Message>>> = None;
+static mut SIG_CHANNEL: Option<Mutex<mpsc::SyncSender<Message>>> = None;
 extern "C" fn sigint(_: i32) {
+    println!("Bye!");
     unsafe {
         if let Some(ref mutex) = SIG_CHANNEL {
             let inner = mutex.lock().unwrap();
-            let _ = inner.send(Message::Key(ui::keys::Key::ESC));
+            let _ = inner.try_send(Message::Key(ui::keys::Key::ESC));
+        }
+    }
+}
+extern "C" fn sig_resize(_: i32) {
+    unsafe {
+        use ui::termutil::terminal_size;
+        if let Some((w, h)) = terminal_size() {
+            if let Some(ref mutex) = SIG_CHANNEL {
+                let inner = mutex.lock().unwrap();
+                let _ = inner.try_send(Message::Resize(w, h));
+            }
         }
     }
 }
@@ -86,50 +94,45 @@ extern "C" fn sigint(_: i32) {
 #[derive(Serialize, Deserialize, Debug)]
 struct JsonState {
     timetable: HashMap<String, Vec<String>>,
-    canteen  : HashMap<String, Vec<String>>,
+    canteen: HashMap<String, Vec<String>>,
 }
 
 fn mk_json() {
-    
     let state = JsonState {
-        timetable : data_source::timetable::get(
-            data_source::timetable::Query::ThisWeek,
-            "AI3"
-        ).unwrap_or(Default::default()).into_iter().map(|(k,v)| {
-            (k.to_string(), v)
-        }).collect(),
-        canteen   : data_source::canteen_plan::get(
-            data_source::canteen_plan::Query::ThisWeek,    
-        ).unwrap_or(Default::default()).into_iter().map(|(k,v)| {
-            (k.to_string(), v)
-        }).collect(),
+        timetable: data_source::timetable::get(data_source::timetable::Query::ThisWeek, "AI3")
+            .unwrap_or(Default::default())
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v))
+            .collect(),
+        canteen: data_source::canteen_plan::get(data_source::canteen_plan::Query::ThisWeek)
+            .unwrap_or(Default::default())
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v))
+            .collect(),
     };
 
-
-    let out = serde_json::to_string_pretty(&state).expect("Fucked UP!!");
+    let out = serde_json::to_string_pretty(&state).expect("Could not print JSON, somehow.");
 
     println!("{}", out);
 }
 
 fn main() -> Result<(), String> {
-    use ui::termutil::*;
-    use ui::*;
-
     //if let Some("") = std::env::args.iter().next() {
     //}
     //
     //
 
-     //mk_json();
-     //return Ok(());
+    //mk_json();
+    //return Ok(());
 
-    term_setup();
+    ui::termutil::term_setup();
 
-    let (outgoing, incoming) = mpsc::channel::<Message>();
+    let (outgoing, incoming) = mpsc::sync_channel::<Message>(256);
     unsafe {
         SIG_CHANNEL = Some(Mutex::new(outgoing.clone()));
     }
-    register_for_sigint(sigint);
+    ui::termutil::register_for_sigint(sigint);
+    ui::termutil::register_for_resize(sig_resize);
 
     let mut state = AppState {
         course: "AI3".to_string(),
@@ -162,13 +165,10 @@ fn main() -> Result<(), String> {
     setup_datasources(&state, &outgoing);
     setup_keyboard_datasource(&outgoing);
 
-    let mut size: (isize, isize) = (80, 40);
+    let mut size: (isize, isize) = ui::termutil::terminal_size().unwrap_or(DEFAULT_SIZE);
 
     loop {
         // render;
-
-        println!("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"); //TODO: Remove me, after impl. resize;
-
         if state.display_mode % 3 == 0 {
             render(size.clone(), &state);
         } else if state.display_mode % 3 == 2 {
@@ -188,9 +188,22 @@ fn main() -> Result<(), String> {
         };
 
         match msg {
-            Message::Key(key) => if handle_key(&mut state, key) {
-                break;
-            },
+            Message::Key(key) => {
+                use ui::keys::Key;
+
+                match key {
+                    Key::Char('m') | Key::Char('M') => state.display_mode += 1,
+
+                    Key::Right | Key::Char('l') | Key::Char('L') => state.day = state.day.succ(),
+
+                    Key::Left | Key::Char('h') | Key::Char('H') => state.day = state.day.pred(),
+
+                    Key::Ctrl('L') => size = ui::termutil::terminal_size().unwrap_or(DEFAULT_SIZE),
+
+                    Key::Ctrl(_) | Key::ESC | Key::Char('q') | Key::Char('Q') => break,
+                    _ => (),
+                }
+            }
             Message::Error(e) => handle_error(&mut state, e),
 
             Message::CanteenData(data) => {
@@ -201,45 +214,19 @@ fn main() -> Result<(), String> {
             }
 
             Message::Resize(w, h) => {
-                unimplemented!();
+                size = (w, h);
             }
         }
     }
-
-    println!("Bye!");
-    term_unsetup();
+    ui::termutil::term_unsetup();
     Ok(())
-}
-
-fn handle_key(state: &mut AppState, key: ui::keys::Key) -> bool {
-    use ui::keys::Key;
-
-    match key {
-        Key::Char('m') | Key::Char('M') => state.display_mode += 1,
-
-        Key::Right | Key::Char('l') | Key::Char('L') => state.day = state.day.succ(),
-
-        Key::Left | Key::Char('h') | Key::Char('H') => state.day = state.day.pred(),
-
-        Key::Ctrl(_) | Key::ESC | Key::Char('q') | Key::Char('Q') => return true,
-
-        Key::Interupt => {
-            eprintln!("Interupt!"); //TODO REMOVE ME!
-            if ui::termutil::was_sigint() {
-                return true;
-            }
-        }
-        _ => (),
-    }
-
-    false
 }
 
 fn handle_error(state: &mut AppState, err: String) {
     state.errors.push(err);
 }
 
-fn setup_keyboard_datasource(outgoing: &mpsc::Sender<Message>) {
+fn setup_keyboard_datasource(outgoing: &mpsc::SyncSender<Message>) {
     let outgoing_cp = outgoing.clone();
 
     thread::spawn(move || {
@@ -256,7 +243,7 @@ fn setup_keyboard_datasource(outgoing: &mpsc::Sender<Message>) {
     });
 }
 
-fn setup_datasources(state: &AppState, outgoing: &mpsc::Sender<Message>) {
+fn setup_datasources(state: &AppState, outgoing: &mpsc::SyncSender<Message>) {
     message_adapter(
         data_source::timetable::get_async(data_source::timetable::Query::ThisWeek, &state.course),
         &outgoing,
@@ -294,31 +281,11 @@ fn setup_datasources(state: &AppState, outgoing: &mpsc::Sender<Message>) {
     );
 }
 
-fn show_error(theme: &Theme, err: &String) {
-    use std::io::Read;
-    use ui::termutil::*;
-    use ui::*;
+fn show_error(_theme: &Theme, _err: &String) {
+    //use ui::termutil::*;
+    //use ui::*;
 
     unimplemented!();
-
-    let error = GridV::new()
-        .add(Center::new(Backgound(
-            theme.textback1,
-            VBox(
-                DOUBLE_BORDER_BOX,
-                Color::Red,
-                VText::colored(theme.heading, err),
-            ),
-        ))).add(Center::new(VText::colored(
-            theme.heading,
-            "Any Key to continue.",
-        )));
-
-    let mut root = Backgound(theme.background, error);
-
-    //let (w, h) = query_terminal_size_and_reset().unwrap_or((100, 100));
-    // root.try_set_size(w as isize, h as isize - 1);
-    root.render_to_stdout();
 }
 
 fn select_colorscheme() -> Theme {
@@ -351,7 +318,6 @@ fn select_colorscheme() -> Theme {
 
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 fn render(size: (isize, isize), state: &AppState) {
-    use ui::termutil::*;
     use ui::*;
 
     let theme = &state.theme;
@@ -446,7 +412,7 @@ fn render(size: (isize, isize), state: &AppState) {
     let mut root = Backgound(theme.background, Center::new(grid_root));
 
     let (w, h) = size;
-    root.try_set_size(w, h - 1);
+    root.try_set_size(w, h);
     root.render_to_stdout();
 }
 
@@ -455,7 +421,6 @@ fn table_render(
     state: &AppState,
     content: &HashMap<Date<Local>, Vec<String>>,
 ) {
-    use ui::termutil::*;
     use ui::*;
 
     let theme = &state.theme;
@@ -533,71 +498,4 @@ mod solarized {
     pub const CYAN: Color = Color::Custom(0x2a, 0xa1, 0x98);
     pub const GREEN: Color = Color::Custom(0x85, 0x99, 0x00);
 
-}
-
-mod test {
-
-    pub(crate) fn test_render(_state: isize) {
-        use ui::termutil::*;
-        use ui::*;
-
-        let (w, h) = query_terminal_size_and_reset().unwrap_or((100, 100));
-
-        let mut root = GridV::new()
-            .add(
-                GridH::new()
-                    .add(VBox(SIMPLE_BOX, Color::BrightYellow, VText::simple("1")))
-                    .add(VBox(SIMPLE_BOX, Color::BrightYellow, VText::simple("2")))
-                    .add(VBox(SIMPLE_BOX, Color::BrightYellow, VText::simple("3"))),
-            ).add(
-                GridH::new()
-                    .add(VBox(SIMPLE_BOX, Color::BrightYellow, VText::simple("4")))
-                    .add(VBox(SIMPLE_BOX, Color::BrightYellow, VText::simple("5/6"))),
-            ).add(GridH::new().add(VBox(
-                SIMPLE_BOX,
-                Color::BrightYellow,
-                VText::simple("Full"),
-            )));
-
-        root.try_set_size(w as isize, h as isize);
-        root.render_to_stdout();
-    }
-
-    pub(crate) fn test_render2(state: &isize) {
-        use ui::termutil::*;
-        use ui::*;
-
-        let (w, h) = query_terminal_size_and_reset().unwrap_or((20, 20));
-
-        let mut root = GridH::new()
-            .add(VBox(
-                DOUBLE_BORDER_BOX,
-                Color::BrightYellow,
-                Spacer::new(VText::simple("Hello World")),
-            )).add(VBox(
-                SIMPLE_BOX,
-                Color::BrightYellow,
-                Spacer::new(VText::simple(
-                    "Hello World. And also: 'Hello Humanity'. And Stuff... This is Filler Text",
-                )),
-            )).add(VBox(
-                BORDER_BOX,
-                Color::BrightYellow,
-                Margin(
-                    (4, 2),
-                    Backgound(
-                        Color::BrightBlue,
-                        Spacer::new(VText::simple(
-                            "\t1\t2\t3\t4\t5\t6\t7\t8\t9\t\n\ntab stops are working!",
-                        )),
-                    ),
-                ),
-            )).add(VText::simple(&format!(
-                "Tic: {:.2}",
-                *state as f32 / 1000f32
-            )));
-
-        root.try_set_size(w as isize, h as isize);
-        root.render_to_stdout();
-    }
 }

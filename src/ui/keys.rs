@@ -48,6 +48,7 @@ pub enum Key {
     Ctrl(char),
 }
 
+#[deprecated()]
 pub fn read() -> Key {
     use nix::errno::Errno::EINTR;
     use nix::unistd::read;
@@ -65,7 +66,7 @@ pub fn read() -> Key {
         Ok(5) => read5(&[key[0], key[1], key[2], key[3], key[4]]),
         Ok(_) => unreachable!(),
         Err(Sys(EINTR)) => Key::Interupt,
-        Err(e) => Key::Unknown,
+        Err(_error) => Key::Unknown,
     };
 
     // DEBUG
@@ -98,11 +99,11 @@ pub fn advanced_keys(mut key: [u8; MAX_KEY_LEN], filled: usize) -> (Key, [u8; MA
             let valid_bytes = filled + n;
             match find_possible_key(&key, valid_bytes) {
                 Some(r) => return r,
-                None => return (Key::Unknown, [0u8; MAX_KEY_LEN], 0),
+                None => return (Key::Unknown, key, 0),
             }
         }
         Err(Sys(EINTR)) => (Key::Interupt, key, filled),
-        Err(e) => return (Key::Unknown, [0u8; MAX_KEY_LEN], 0),
+        Err(_error) => return (Key::Unknown, [0u8; MAX_KEY_LEN], 0),
     }
 }
 
@@ -110,7 +111,11 @@ fn is_data_on_stdin() -> bool {
     use nix::poll::*;
 
     let mut fd = [PollFd::new(0, EventFlags::POLLIN)];
-    poll(&mut fd, 0);
+    if let Err(_err) = poll(&mut fd, 0) {
+        // Should be more robust this way.
+        // May prevent infinite loop;
+        return false;
+    }
 
     match fd[0].revents() {
         Some(EventFlags::POLLIN) => true,
@@ -262,7 +267,7 @@ fn utf8_or_bust(buf: &[u8]) -> Key {
     use std::str::from_utf8;
     let mut chars = match from_utf8(&buf) {
         Ok(s) => s.chars(),
-        Err(e) => return Key::Unknown,
+        Err(_error) => return Key::Unknown,
     };
 
     let (a, b) = (chars.next(), chars.next());

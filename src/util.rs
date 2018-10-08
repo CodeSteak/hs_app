@@ -83,7 +83,7 @@ where
     rx
 }
 
-pub(crate) fn message_adapter<F, I, O>(from: Receiver<I>, to: &Sender<O>, map_fn: F)
+pub(crate) fn message_adapter<F, I, O>(from: Receiver<I>, to: &SyncSender<O>, map_fn: F)
 where
     I: 'static + Send,
     O: 'static + Send,

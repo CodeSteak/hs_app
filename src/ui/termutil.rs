@@ -3,15 +3,10 @@ use std::io::{Read, Write};
 
 use nix::sys::signal;
 use nix::sys::termios;
-use nix::unistd;
 
 pub fn term_setup() -> bool {
     println!("\x1B[?25h");
     println!("\x1B[?25l");
-
-    for _ in 0..255 {
-        println!();
-    }
 
     let mut term = match termios::tcgetattr(0) {
         Ok(o) => o,
@@ -33,15 +28,59 @@ pub fn term_setup() -> bool {
     ret
 }
 
+// TODO: dedup code
 pub fn register_for_sigint(handler: extern "C" fn(c_int)) {
     use nix::sys::signal::*;
-    let mut sigint = signal::SigSet::empty();
-    let mut flags = SaFlags::empty();
+    let sigint = signal::SigSet::empty();
+    let flags = SaFlags::empty();
 
-    let mut action = SigAction::new(SigHandler::Handler(handler), flags, sigint);
-
+    let action = SigAction::new(SigHandler::Handler(handler), flags, sigint);
     unsafe {
         let _ = sigaction(signal::SIGINT, &action);
+    }
+}
+
+pub fn register_for_resize(handler: extern "C" fn(c_int)) {
+    use nix::sys::signal::*;
+    let sigint = signal::SigSet::empty();
+    let flags = SaFlags::empty();
+
+    let action = SigAction::new(SigHandler::Handler(handler), flags, sigint);
+
+    unsafe {
+        let _ = sigaction(signal::SIGWINCH, &action);
+    }
+}
+
+pub use self::ioctl::terminal_size;
+mod ioctl {
+
+    use nix::libc::{self, c_ulong, c_ushort};
+    use std::mem;
+
+    #[repr(C)]
+    struct termsize {
+        height: c_ushort,
+        width: c_ushort,
+        _xpixel: c_ushort,
+        _ypixel: c_ushort,
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+    const TIOCGWINSZ: c_ulong = 0x40087468;
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    const TIOCGWINSZ: c_ulong = 0x00005413;
+
+    pub fn terminal_size() -> Option<(isize, isize)> {
+        unsafe {
+            let mut size: termsize = mem::zeroed();
+            let res = libc::ioctl(0, TIOCGWINSZ, &mut size);
+            if res >= 0 {
+                Some((size.width as isize, size.height as isize))
+            } else {
+                None
+            }
+        }
     }
 }
 
@@ -69,7 +108,9 @@ fn clear_buffer() -> Option<()> {
 
     loop {
         let mut fd = [PollFd::new(0, EventFlags::POLLIN)];
-        poll(&mut fd, 0);
+        if let Err(_err) = poll(&mut fd, 0) {
+            return None;
+        }
 
         if fd[0].revents()? == EventFlags::POLLIN {
             let mut buf = [0u8; 1024];
@@ -78,8 +119,6 @@ fn clear_buffer() -> Option<()> {
             return Some(());
         }
     }
-
-    Some(())
 }
 
 pub fn term_unsetup() {
@@ -87,6 +126,7 @@ pub fn term_unsetup() {
     let _ = clear_buffer();
 }
 
+#[deprecated()]
 pub fn query_terminal_size_and_reset() -> io::Result<(u16, u16)> {
     let mut stdout = io::stdout();
     let mut stdin = io::stdin();
@@ -95,7 +135,7 @@ pub fn query_terminal_size_and_reset() -> io::Result<(u16, u16)> {
     write!(stdout, "\x1B[6n");
     stdout.flush()?;
 
-    let mut r: char = '\0';
+    let mut r: char; // <== should use u8 instead.
     let mut rbuf = [0u8; 1];
 
     stdin.read_exact(&mut rbuf)?;
