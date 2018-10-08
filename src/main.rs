@@ -2,6 +2,12 @@
 //^ Warnings as Errors.
 #![allow(dead_code)]
 
+#[macro_use]
+extern crate serde_derive;
+
+extern crate serde;
+extern crate serde_json;
+
 extern crate chrono;
 extern crate nix;
 extern crate reqwest;
@@ -77,9 +83,45 @@ extern "C" fn sigint(_: i32) {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+struct JsonState {
+    timetable: HashMap<String, Vec<String>>,
+    canteen  : HashMap<String, Vec<String>>,
+}
+
+fn mk_json() {
+    
+    let state = JsonState {
+        timetable : data_source::timetable::get(
+            data_source::timetable::Query::ThisWeek,
+            "AI3"
+        ).unwrap_or(Default::default()).into_iter().map(|(k,v)| {
+            (k.to_string(), v)
+        }).collect(),
+        canteen   : data_source::canteen_plan::get(
+            data_source::canteen_plan::Query::ThisWeek,    
+        ).unwrap_or(Default::default()).into_iter().map(|(k,v)| {
+            (k.to_string(), v)
+        }).collect(),
+    };
+
+
+    let out = serde_json::to_string_pretty(&state).expect("Fucked UP!!");
+
+    println!("{}", out);
+}
+
 fn main() -> Result<(), String> {
     use ui::termutil::*;
     use ui::*;
+
+    //if let Some("") = std::env::args.iter().next() {
+    //}
+    //
+    //
+
+     //mk_json();
+     //return Ok(());
 
     term_setup();
 
@@ -130,7 +172,7 @@ fn main() -> Result<(), String> {
         if state.display_mode % 3 == 0 {
             render(size.clone(), &state);
         } else if state.display_mode % 3 == 2 {
-            table_render(size.clone(), &state, &state.canteen);
+            table_render(size.clone(), &state, &state.timetable);
         } else {
             table_render(size.clone(), &state, &state.canteen);
         };
