@@ -10,6 +10,8 @@ pub struct Theme {
 
     pub text: Color,
     pub heading: Color,
+
+    pub error : Color,
 }
 
 
@@ -27,6 +29,8 @@ pub fn select_colorscheme() -> Theme {
 
             text: solarized::BASE00,
             heading: solarized::BASE01,
+
+            error: solarized::RED,
         }
     } else {
         Theme {
@@ -37,6 +41,8 @@ pub fn select_colorscheme() -> Theme {
 
             text: Color::White,
             heading: Color::White,
+
+            error: Color::Red,
         }
     }
 }

@@ -15,10 +15,6 @@ extern crate hs_crawler;
 
 extern crate unicode_segmentation;
 
-use chrono::Date;
-use chrono::Datelike;
-use chrono::Local;
-
 mod ui;
 use ui::theme::*;
 
@@ -27,6 +23,9 @@ use tui::keys::Key;
 
 mod util;
 use util::*;
+
+use chrono::{Date, Local, Datelike, Timelike};
+
 
 use std::thread;
 
@@ -78,6 +77,10 @@ fn main() -> Result<(), String> {
         day: {
             let mut today = chrono::Local::today();
 
+            if chrono::Local::now().hour() > 18 {
+                today = today.succ();
+            }
+
             if today.weekday() == chrono::Weekday::Sat {
                 today = today.succ();
             }
@@ -106,7 +109,10 @@ fn main() -> Result<(), String> {
 
     loop {
         // render;
-        if state.display_mode % 3 == 0 {
+
+        if ! state.errors.is_empty() {
+            render_errors(size.clone(), &state);
+        } else if state.display_mode % 3 == 0 {
             render(size.clone(), &state);
         } else if state.display_mode % 3 == 2 {
             table_render(size.clone(), &state, &state.timetable);
@@ -136,6 +142,10 @@ fn main() -> Result<(), String> {
                     Key::Ctrl('L') => size = tui::termutil::terminal_size().unwrap_or(DEFAULT_SIZE),
 
                     Key::Ctrl(_) | Key::ESC | Key::Char('q') | Key::Char('Q') => break,
+
+                    Key::Enter => {
+                        let _deleted = state.errors.pop();
+                    },
                     _ => (),
                 }
             }
@@ -255,12 +265,6 @@ fn setup_datasources(state: &AppState, outgoing: &mpsc::SyncSender<Message>) {
     );
 }
 
-fn show_error(_theme: &Theme, _err: &String) {
-    //use tui::termutil::*;
-    //use tui::*;
-
-    unimplemented!();
-}
 
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 fn render(size: (isize, isize), state: &AppState) {
@@ -424,4 +428,31 @@ fn german_weekday(day: chrono::Weekday) -> &'static str {
         Weekday::Sat => "Samstag",
         Weekday::Sun => "Sonntag",
     }
+}
+
+fn render_errors(size: (isize, isize), state: &AppState) {
+    use tui::*;
+
+    let theme = &state.theme;
+
+    let mut root = Backgound(
+        theme.background,
+        Center::new(
+            VMax::new(40,80,
+               Backgound(theme.textback1,
+                        VBox(DOUBLE_BORDER_BOX, theme.error,
+                            VText::colored(theme.heading, &(state.errors
+                                .last()
+                                .map(|s| s as &str)
+                                .unwrap_or("This is a Bug.").to_string()
+                                + "\n\nPress Enter to continue.")
+                            )
+                        )
+               )
+            )
+        )
+    );
+    let (w, h) = size;
+    root.try_set_size(w as isize, h as isize);
+    root.render_to_stdout();
 }
