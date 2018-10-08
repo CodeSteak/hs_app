@@ -1,0 +1,9 @@
+[package]
+name = "hs_crawler"
+version = "0.2.0"
+authors = ["robin <robin@shellf.art>"]
+
+[dependencies]
+select = "^0.4.2"
+reqwest = "^0.9.0"
+chrono = "0.4"

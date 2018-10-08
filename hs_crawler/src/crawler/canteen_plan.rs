@@ -1,6 +1,6 @@
 use super::*;
 
-use util::*;
+use ::util::*;
 
 use std::io;
 use std::io::Read;

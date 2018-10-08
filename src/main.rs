@@ -10,16 +10,21 @@ extern crate serde_json;
 
 extern crate chrono;
 extern crate nix;
-extern crate reqwest;
-extern crate select;
+
+extern crate hs_crawler;
+
 extern crate unicode_segmentation;
 
 use chrono::Date;
 use chrono::Datelike;
 use chrono::Local;
 
-mod data_source;
 mod ui;
+use ui::theme::*;
+
+mod tui;
+use tui::keys::Key;
+
 mod util;
 use util::*;
 
@@ -29,22 +34,10 @@ use std::collections::HashMap;
 
 use std::sync::mpsc;
 
-type State = u64;
 
 const DEFAULT_SIZE: (isize, isize) = (80, 40);
 
-use ui::Color;
-struct Theme {
-    background: Color,
-
-    textback1: Color,
-    textback2: Color,
-
-    text: Color,
-    heading: Color,
-}
-
-struct AppState {
+pub struct AppState {
     course: String,
 
     theme: Theme,
@@ -60,79 +53,23 @@ struct AppState {
     display_mode: usize,
 }
 
-enum Message {
+pub enum Message {
     CanteenData(HashMap<Date<Local>, Vec<String>>),
     TimetableData(HashMap<Date<Local>, Vec<String>>),
     Error(String),
-    Key(ui::keys::Key),
+    Key(Key),
     Resize(isize, isize),
 }
 
-use std::sync::Mutex;
-static mut SIG_CHANNEL: Option<Mutex<mpsc::SyncSender<Message>>> = None;
-extern "C" fn sigint(_: i32) {
-    println!("Bye!");
-    unsafe {
-        if let Some(ref mutex) = SIG_CHANNEL {
-            let inner = mutex.lock().unwrap();
-            let _ = inner.try_send(Message::Key(ui::keys::Key::ESC));
-        }
-    }
-}
-extern "C" fn sig_resize(_: i32) {
-    unsafe {
-        use ui::termutil::terminal_size;
-        if let Some((w, h)) = terminal_size() {
-            if let Some(ref mutex) = SIG_CHANNEL {
-                let inner = mutex.lock().unwrap();
-                let _ = inner.try_send(Message::Resize(w, h));
-            }
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct JsonState {
-    timetable: HashMap<String, Vec<String>>,
-    canteen: HashMap<String, Vec<String>>,
-}
-
-fn mk_json() {
-    let state = JsonState {
-        timetable: data_source::timetable::get(data_source::timetable::Query::ThisWeek, "AI3")
-            .unwrap_or(Default::default())
-            .into_iter()
-            .map(|(k, v)| (k.to_string(), v))
-            .collect(),
-        canteen: data_source::canteen_plan::get(data_source::canteen_plan::Query::ThisWeek)
-            .unwrap_or(Default::default())
-            .into_iter()
-            .map(|(k, v)| (k.to_string(), v))
-            .collect(),
-    };
-
-    let out = serde_json::to_string_pretty(&state).expect("Could not print JSON, somehow.");
-
-    println!("{}", out);
-}
-
 fn main() -> Result<(), String> {
-    //if let Some("") = std::env::args.iter().next() {
-    //}
-    //
-    //
-
-    //mk_json();
-    //return Ok(());
-
-    ui::termutil::term_setup();
+    tui::termutil::term_setup();
 
     let (outgoing, incoming) = mpsc::sync_channel::<Message>(256);
-    unsafe {
-        SIG_CHANNEL = Some(Mutex::new(outgoing.clone()));
-    }
-    ui::termutil::register_for_sigint(sigint);
-    ui::termutil::register_for_resize(sig_resize);
+
+    sighandler::set_back_channel(&outgoing);
+
+    tui::termutil::register_for_sigint(sighandler::sigint);
+    tui::termutil::register_for_resize(sighandler::sig_resize);
 
     let mut state = AppState {
         course: "AI3".to_string(),
@@ -165,7 +102,7 @@ fn main() -> Result<(), String> {
     setup_datasources(&state, &outgoing);
     setup_keyboard_datasource(&outgoing);
 
-    let mut size: (isize, isize) = ui::termutil::terminal_size().unwrap_or(DEFAULT_SIZE);
+    let mut size: (isize, isize) = tui::termutil::terminal_size().unwrap_or(DEFAULT_SIZE);
 
     loop {
         // render;
@@ -189,8 +126,6 @@ fn main() -> Result<(), String> {
 
         match msg {
             Message::Key(key) => {
-                use ui::keys::Key;
-
                 match key {
                     Key::Char('m') | Key::Char('M') => state.display_mode += 1,
 
@@ -198,7 +133,7 @@ fn main() -> Result<(), String> {
 
                     Key::Left | Key::Char('h') | Key::Char('H') => state.day = state.day.pred(),
 
-                    Key::Ctrl('L') => size = ui::termutil::terminal_size().unwrap_or(DEFAULT_SIZE),
+                    Key::Ctrl('L') => size = tui::termutil::terminal_size().unwrap_or(DEFAULT_SIZE),
 
                     Key::Ctrl(_) | Key::ESC | Key::Char('q') | Key::Char('Q') => break,
                     _ => (),
@@ -218,8 +153,47 @@ fn main() -> Result<(), String> {
             }
         }
     }
-    ui::termutil::term_unsetup();
+
+    tui::termutil::term_unsetup();
     Ok(())
+}
+
+mod sighandler {
+    use super::Message;
+
+    use tui::keys::Key;
+
+    use std::sync::Mutex;
+    use std::sync::mpsc::SyncSender;
+
+    static mut SIG_CHANNEL: Option<Mutex<SyncSender<Message>>> = None;
+
+    pub fn set_back_channel(sender : &SyncSender<Message>) {
+        unsafe {
+            SIG_CHANNEL = Some(Mutex::new(sender.clone()));
+        }
+    }
+
+    pub extern "C" fn sigint(_: i32) {
+        println!("Bye!");
+        unsafe {
+            if let Some(ref mutex) = SIG_CHANNEL {
+                let inner = mutex.lock().unwrap();
+                let _ = inner.try_send(Message::Key(Key::ESC));
+            }
+        }
+    }
+    pub extern "C" fn sig_resize(_: i32) {
+        unsafe {
+            use tui::termutil::terminal_size;
+            if let Some((w, h)) = terminal_size() {
+                if let Some(ref mutex) = SIG_CHANNEL {
+                    let inner = mutex.lock().unwrap();
+                    let _ = inner.try_send(Message::Resize(w, h));
+                }
+            }
+        }
+    }
 }
 
 fn handle_error(state: &mut AppState, err: String) {
@@ -234,7 +208,7 @@ fn setup_keyboard_datasource(outgoing: &mpsc::SyncSender<Message>) {
         let mut key_buffer_filled = 0usize;
 
         loop {
-            let (k, r, f) = ui::keys::advanced_keys(key_buffer, key_buffer_filled);
+            let (k, r, f) = tui::keys::advanced_keys(key_buffer, key_buffer_filled);
             key_buffer = r;
             key_buffer_filled = f;
 
@@ -245,7 +219,7 @@ fn setup_keyboard_datasource(outgoing: &mpsc::SyncSender<Message>) {
 
 fn setup_datasources(state: &AppState, outgoing: &mpsc::SyncSender<Message>) {
     message_adapter(
-        data_source::timetable::get_async(data_source::timetable::Query::ThisWeek, &state.course),
+        hs_crawler::timetable::get_async(hs_crawler::timetable::Query::ThisWeek, &state.course),
         &outgoing,
         |r| match r {
             Ok(content) => Message::TimetableData(content),
@@ -254,7 +228,7 @@ fn setup_datasources(state: &AppState, outgoing: &mpsc::SyncSender<Message>) {
     );
 
     message_adapter(
-        data_source::timetable::get_async(data_source::timetable::Query::NextWeek, &state.course),
+        hs_crawler::timetable::get_async(hs_crawler::timetable::Query::NextWeek, &state.course),
         &outgoing,
         |r| match r {
             Ok(content) => Message::TimetableData(content),
@@ -263,7 +237,7 @@ fn setup_datasources(state: &AppState, outgoing: &mpsc::SyncSender<Message>) {
     );
 
     message_adapter(
-        data_source::canteen_plan::get_async(data_source::canteen_plan::Query::ThisWeek),
+        hs_crawler::canteen_plan::get_async(hs_crawler::canteen_plan::Query::ThisWeek),
         &outgoing,
         |r| match r {
             Ok(content) => Message::CanteenData(content),
@@ -272,7 +246,7 @@ fn setup_datasources(state: &AppState, outgoing: &mpsc::SyncSender<Message>) {
     );
 
     message_adapter(
-        data_source::canteen_plan::get_async(data_source::canteen_plan::Query::NextWeek),
+        hs_crawler::canteen_plan::get_async(hs_crawler::canteen_plan::Query::NextWeek),
         &outgoing,
         |r| match r {
             Ok(content) => Message::CanteenData(content),
@@ -282,43 +256,15 @@ fn setup_datasources(state: &AppState, outgoing: &mpsc::SyncSender<Message>) {
 }
 
 fn show_error(_theme: &Theme, _err: &String) {
-    //use ui::termutil::*;
-    //use ui::*;
+    //use tui::termutil::*;
+    //use tui::*;
 
     unimplemented!();
 }
 
-fn select_colorscheme() -> Theme {
-    let truecolor = std::env::var("COLORTERM")
-        .map(|s| s.to_lowercase().contains("truecolor"))
-        .unwrap_or(false);
-
-    if truecolor {
-        Theme {
-            background: solarized::CYAN,
-
-            textback1: solarized::BASE3,
-            textback2: solarized::BASE2,
-
-            text: solarized::BASE00,
-            heading: solarized::BASE01,
-        }
-    } else {
-        Theme {
-            background: Color::Cyan,
-
-            textback1: Color::Blue,
-            textback2: Color::Magenta,
-
-            text: Color::White,
-            heading: Color::White,
-        }
-    }
-}
-
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 fn render(size: (isize, isize), state: &AppState) {
-    use ui::*;
+    use tui::*;
 
     let theme = &state.theme;
     let today = &state.day;
@@ -421,7 +367,7 @@ fn table_render(
     state: &AppState,
     content: &HashMap<Date<Local>, Vec<String>>,
 ) {
-    use ui::*;
+    use tui::*;
 
     let theme = &state.theme;
     let mut today = state.day.clone();
@@ -478,24 +424,4 @@ fn german_weekday(day: chrono::Weekday) -> &'static str {
         Weekday::Sat => "Samstag",
         Weekday::Sun => "Sonntag",
     }
-}
-
-mod solarized {
-    use ui::vterm::Color;
-
-    pub const BASE3: Color = Color::Custom(0xfd, 0xf6, 0xe3);
-    pub const BASE2: Color = Color::Custom(0xee, 0xe8, 0xd5);
-
-    pub const BASE00: Color = Color::Custom(0x65, 0x7b, 0x83);
-    pub const BASE01: Color = Color::Custom(0x58, 0x6e, 0x75);
-
-    pub const YELLOW: Color = Color::Custom(0xb5, 0x89, 0x00);
-    pub const ORANGE: Color = Color::Custom(0xcb, 0x4b, 0x16);
-    pub const RED: Color = Color::Custom(0xdc, 0x32, 0x2f);
-    pub const MAGENTA: Color = Color::Custom(0xd3, 0x36, 0x82);
-    pub const VIOLET: Color = Color::Custom(0x6c, 0x71, 0xc4);
-    pub const BLUE: Color = Color::Custom(0x26, 0x8b, 0xd2);
-    pub const CYAN: Color = Color::Custom(0x2a, 0xa1, 0x98);
-    pub const GREEN: Color = Color::Custom(0x85, 0x99, 0x00);
-
 }
