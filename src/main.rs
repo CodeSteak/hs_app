@@ -281,7 +281,7 @@ fn render(size: (isize, isize), state: &AppState) {
         i += 1;
         table_widget.push(Margin(
             (1, 0),
-            Backgound(
+            Background(
                 if i % 2 == 1 {
                     theme.textback1
                 } else {
@@ -298,7 +298,7 @@ fn render(size: (isize, isize), state: &AppState) {
         i += 1;
         canteen_widget.push(Margin(
             (1, 0),
-            Backgound(
+            Background(
                 if i % 2 == 1 {
                     theme.textback1
                 } else {
@@ -329,9 +329,9 @@ fn render(size: (isize, isize), state: &AppState) {
     );
 
     let heading = VBox(
-        NONE_BOX,
+        boxtype::NONE_BOX,
         Color::None,
-        Backgound(
+        Background(
             theme.textback1,
             Margin((2, 1), VText::colored(theme.heading, &info_str)),
         ),
@@ -359,7 +359,7 @@ fn render(size: (isize, isize), state: &AppState) {
         ))).add(Center::new(Margin((2, 1), table_widget)))
         .add(Center::new(Margin((2, 1), canteen_widget)));
 
-    let mut root = Backgound(theme.background, Center::new(grid_root));
+    let mut root = Background(theme.background, Center::new(grid_root));
 
     let (w, h) = size;
     root.try_set_size(w, h);
@@ -393,7 +393,7 @@ fn table_render(
 
         for d in content.get(&today).unwrap_or(&Default::default()) {
             i += 1;
-            table_widget.push(Backgound(
+            table_widget.push(Background(
                 if i % 2 == 1 {
                     theme.textback1
                 } else {
@@ -410,7 +410,7 @@ fn table_render(
         today = today.succ();
     }
 
-    let mut root = Backgound(theme.background, Center::new(grid_root));
+    let mut root = Background(theme.background, Center::new(grid_root));
 
     let (w, h) = size; //query_terminal_size_and_reset().unwrap_or((100, 100));
     root.try_set_size(w as isize, h as isize - 1);
@@ -435,12 +435,12 @@ fn render_errors(size: (isize, isize), state: &AppState) {
 
     let theme = &state.theme;
 
-    let mut root = Backgound(
+    let mut root = Background(
         theme.background,
         Center::new(
-            VMax::new(40,80,
-               Backgound(theme.textback1,
-                        VBox(DOUBLE_BORDER_BOX, theme.error,
+            VMax::new(40, 80,
+                      Background(theme.textback1,
+                                 VBox(boxtype::DOUBLE_BORDER_BOX, theme.error,
                             VText::colored(theme.heading, &(state.errors
                                 .last()
                                 .map(|s| s as &str)
