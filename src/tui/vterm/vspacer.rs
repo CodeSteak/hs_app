@@ -35,7 +35,7 @@ impl<W: Widget> Widget for Spacer<W> {
     }
 }
 
-trait WithSpacer<W: Widget> {
+pub trait WithSpacer<W: Widget> {
     fn maximized(self) -> Spacer<W>;
 }
 

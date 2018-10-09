@@ -32,12 +32,12 @@ impl<W: Widget> Widget for VMax<W> {
     }
 }
 
-trait WithMax<W: Widget> {
-    fn max(self, w : isize, h : isize) -> VMax<W>;
+pub trait WithMax<W: Widget> {
+    fn max_size(self, w : isize, h : isize) -> VMax<W>;
 }
 
 impl<W : Widget+Sized> WithMax<W> for W {
-    fn max(self, w : isize, h : isize) -> VMax<W> {
+    fn max_size(self, w : isize, h : isize) -> VMax<W> {
         VMax::new(w,h, self)
     }
 }

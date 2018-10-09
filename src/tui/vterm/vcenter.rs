@@ -58,7 +58,7 @@ impl<W: Widget> Widget for Center<W> {
     }
 }
 
-trait WithCenter<W: Widget> {
+pub trait WithCenter<W: Widget> {
     fn centered(self) -> Center<W>;
 }
 

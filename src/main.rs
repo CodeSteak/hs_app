@@ -432,27 +432,21 @@ fn german_weekday(day: chrono::Weekday) -> &'static str {
 
 fn render_errors(size: (isize, isize), state: &AppState) {
     use tui::*;
-
     let theme = &state.theme;
 
-    let mut root = Background(
-        theme.background,
-        Center::new(
-            VMax::new(40, 80,
-                      Background(theme.textback1,
-                                 VBox(boxtype::DOUBLE_BORDER_BOX, theme.error,
-                            VText::colored(theme.heading, &(state.errors
-                                .last()
-                                .map(|s| s as &str)
-                                .unwrap_or("This is a Bug.").to_string()
-                                + "\n\nPress Enter to continue.")
-                            )
-                        )
-               )
-            )
-        )
-    );
+    let mut root = VText::colored(theme.heading, &(state.errors
+        .last()
+        .map(|s| s as &str)
+        .unwrap_or("This is a Bug.").to_string()
+        + "\n\nPress Enter to continue.")
+    ).boxed(boxtype::DOUBLE_BORDER_BOX, theme.error)
+        .with_background(theme.textback1)
+        .max_size(40,80)
+        .centered()
+        .with_background(theme.background);
+
     let (w, h) = size;
+
     root.try_set_size(w as isize, h as isize);
     root.render_to_stdout();
 }

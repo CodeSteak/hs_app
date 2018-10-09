@@ -47,7 +47,7 @@ impl<W: Widget> Widget for Margin<W> {
     }
 }
 
-trait WithMargin<W: Widget> {
+pub trait WithMargin<W: Widget> {
     fn margin(self, x : isize, y : isize) -> Margin<W>;
 }
 

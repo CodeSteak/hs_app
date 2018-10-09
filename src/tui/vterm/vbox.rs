@@ -76,7 +76,7 @@ impl<W: Widget> Widget for VBox<W> {
     }
 }
 
-trait WithBox<W: Widget> {
+pub trait WithBox<W: Widget> {
     fn boxed(self, box_type : [char; 9], c : Color) -> VBox<W>;
 }
 

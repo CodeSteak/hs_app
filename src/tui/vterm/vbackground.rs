@@ -23,12 +23,12 @@ impl<W: Widget> Widget for Background<W> {
     }
 }
 
-trait WithBackground<W: Widget> {
-    fn background(self, c : Color) -> Background<W>;
+pub trait WithBackground<W: Widget> {
+    fn with_background(self, c : Color) -> Background<W>;
 }
 
 impl<W : Widget+Sized> WithBackground<W> for W {
-    fn background(self, c : Color) -> Background<W> {
+    fn with_background(self, c : Color) -> Background<W> {
         Background(c, self)
     }
 }
