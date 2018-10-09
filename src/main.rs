@@ -275,38 +275,40 @@ fn render(size: (isize, isize), state: &AppState) {
     let canteen = &state.canteen;
     let timetable = &state.timetable;
 
-    let mut i = 0;
     let mut table_widget = GridV::new();
-    for d in timetable.get(&today).unwrap_or(&Default::default()) {
-        i += 1;
-        table_widget.push(Margin(
-            (1, 0),
-            Background(
-                if i % 2 == 1 {
-                    theme.textback1
-                } else {
-                    theme.textback2
-                },
-                Spacer::new(Margin((2, 0), VText::colored(theme.text, d))),
-            ),
-        ));
+    for (i,d) in timetable.get(&today).unwrap_or(&Default::default()).iter().enumerate() {
+
+        let background = if i % 2 == 1 {
+            theme.textback1
+        } else {
+            theme.textback2
+        };
+
+        table_widget.push(
+            VText::colored(theme.text, d)
+                .margin(1,0)
+                .centered()
+                .with_background(background)
+                .margin(1,0)
+        );
     }
 
     let mut canteen_widget = GridV::new();
-    let mut i = 0;
-    for d in canteen.get(&today).unwrap_or(&Default::default()) {
-        i += 1;
-        canteen_widget.push(Margin(
-            (1, 0),
-            Background(
-                if i % 2 == 1 {
-                    theme.textback1
-                } else {
-                    theme.textback2
-                },
-                Center::new(Margin((2, 0), VText::colored(theme.text, d))),
-            ),
-        ));
+    for (i,d) in canteen.get(&today).unwrap_or(&Default::default()).iter().enumerate() {
+
+        let background = if i % 2 == 1 {
+            theme.textback1
+        } else {
+            theme.textback2
+        };
+
+        canteen_widget.push(
+            VText::colored(theme.text, d)
+                .margin(1,0)
+                .centered()
+                .with_background(background)
+                .margin(1,0)
+        );
     }
 
     let loading = if canteen.len() == 0 || timetable.len() == 0 {
@@ -328,17 +330,12 @@ fn render(size: (isize, isize), state: &AppState) {
         loading
     );
 
-    let heading = VBox(
-        boxtype::NONE_BOX,
-        Color::None,
-        Background(
-            theme.textback1,
-            Margin((2, 1), VText::colored(theme.heading, &info_str)),
-        ),
-    );
+    let heading = VText::colored(theme.heading, &info_str)
+        .margin(2,1)
+        .with_background(theme.textback1)
+        .margin(1,1);
 
-    let help = Margin(
-        (4, 2),
+    let help =
         VText::colored(
             theme.heading,
             "\
@@ -349,17 +346,19 @@ fn render(size: (isize, isize), state: &AppState) {
     ▶ => Next
     ◀ => Prev
     ",
-        ),
-    );
+        ).margin(4,2);
 
     let grid_root = GridH::new()
-        .add(Center::new(Margin(
-            (2, 1),
-            GridV::new().add(heading).add(help),
-        ))).add(Center::new(Margin((2, 1), table_widget)))
-        .add(Center::new(Margin((2, 1), canteen_widget)));
+        .add(
+            GridV::new().add(heading).add(help).margin(2,1).centered(),
+        ).add(
+            table_widget.margin(2,1).centered()
+        )
+        .add(
+            canteen_widget.margin(2,1).centered()
+        );
 
-    let mut root = Background(theme.background, Center::new(grid_root));
+    let mut root = grid_root.centered().with_background(theme.background);
 
     let (w, h) = size;
     root.try_set_size(w, h);
@@ -376,9 +375,9 @@ fn table_render(
     let theme = &state.theme;
     let mut today = state.day.clone();
 
-    let mut i = 0;
     let mut grid_root = GridH::new();
 
+    let mut i = 0;
     for _ in 0..7 {
         let info_str = format!(
             "{:10}\n{:02}.{:02}.{}",
@@ -388,19 +387,23 @@ fn table_render(
             today.year()
         );
 
-        let mut table_widget =
-            GridV::new().add(Center::new(VText::colored(theme.heading, &info_str)));
+        let mut table_widget = GridV::new();
+        table_widget.push(
+            VText::colored(theme.heading, &info_str).centered()
+        );
 
         for d in content.get(&today).unwrap_or(&Default::default()) {
+            let bg = if i % 2 == 1 {
+                theme.textback1
+            } else {
+                theme.textback2
+            };
+
+            table_widget.push(
+                VText::colored(theme.text, d).centered().with_background(bg)
+            );
+
             i += 1;
-            table_widget.push(Background(
-                if i % 2 == 1 {
-                    theme.textback1
-                } else {
-                    theme.textback2
-                },
-                Spacer::new(VText::colored(theme.text, d)),
-            ));
         }
 
         if !content.get(&today).is_none() {
@@ -410,10 +413,10 @@ fn table_render(
         today = today.succ();
     }
 
-    let mut root = Background(theme.background, Center::new(grid_root));
+    let mut root = grid_root.centered().with_background(theme.background);
 
-    let (w, h) = size; //query_terminal_size_and_reset().unwrap_or((100, 100));
-    root.try_set_size(w as isize, h as isize - 1);
+    let (w, h) = size;
+    root.try_set_size(w as isize, h as isize);
     root.render_to_stdout();
 }
 
