@@ -1,4 +1,4 @@
-
+// TODO: Remove?
 use hs_crawler;
 use serde_json;
 
@@ -10,10 +10,10 @@ struct JsonState {
     canteen: HashMap<String, String>,
 }
 
-pub fn print_as_json() {
+pub fn print_as_json(course : &str) {
 
     let state = JsonState {
-        timetable: hs_crawler::timetable::get(hs_crawler::timetable::Query::ThisWeek, "AI3")
+        timetable: hs_crawler::timetable::get(hs_crawler::timetable::Query::ThisWeek, course)
             .unwrap_or(Default::default())
             .into_iter()
             .map(|(k, v)| (

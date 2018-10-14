@@ -15,8 +15,14 @@ extern crate hs_crawler;
 
 extern crate unicode_segmentation;
 
+extern crate dirs;
+
+extern crate clap;
+
 mod ui;
 use ui::theme::*;
+
+use ui::cache;
 
 mod tui;
 use tui::keys::Key;
@@ -24,8 +30,7 @@ use tui::keys::Key;
 mod util;
 use util::*;
 
-use chrono::{Date, Local, Datelike, Timelike};
-
+use chrono::prelude::*;
 
 use std::thread;
 
@@ -33,8 +38,14 @@ use std::collections::HashMap;
 
 use std::sync::mpsc;
 
+use clap::{Arg, App};
 
 const DEFAULT_SIZE: (isize, isize) = (80, 40);
+
+pub struct AppData {
+    pub canteen: HashMap<Date<Local>, Vec<String>>,
+    pub timetable: HashMap<Date<Local>, Vec<String>>,
+}
 
 pub struct AppState {
     course: String,
@@ -42,8 +53,7 @@ pub struct AppState {
     theme: Theme,
     day: Date<Local>,
 
-    canteen: HashMap<Date<Local>, Vec<String>>,
-    timetable: HashMap<Date<Local>, Vec<String>>,
+    data : AppData,
 
     loading: (usize, usize),
 
@@ -61,6 +71,48 @@ pub enum Message {
 }
 
 fn main() -> Result<(), String> {
+
+    let matches = App::new("HS APP")
+        .version(VERSION)
+        .author("Robin W. <robin@shellf.art>")
+        .about("Shows timetable and food plan!")
+        .arg(Arg::with_name("course")
+            .short("c")
+            .long("course")
+            .takes_value(true)
+            .default_value("AI3")
+            .help("Sets course to fetch timetable from.")
+        ).arg(
+            Arg::with_name("simplecolor")
+                .short("s")
+                .long("simple-color")
+                .help("Use only simple Terminal colors.")
+                .conflicts_with("json")
+        ).arg(Arg::with_name("json")
+                .short("j")
+                .long("json")
+                .help("Dump data as JSON and exit.")
+        ).get_matches();
+
+    let course = matches.value_of("course").unwrap().to_uppercase();
+
+    if matches.is_present("simplecolor") {
+        use std::env;
+        env::set_var("COLORTERM", "");
+    }
+
+    if matches.is_present("json") {
+        return Ok(ui::json::print_as_json(&course));
+    }
+
+    return ui_app(&course);
+}
+
+fn ui_app(course : &str) -> Result<(), String> {
+    use std::fmt::Write;
+    let mut log = String::new();
+
+
     tui::termutil::term_setup();
 
     let (outgoing, incoming) = mpsc::sync_channel::<Message>(256);
@@ -71,7 +123,7 @@ fn main() -> Result<(), String> {
     tui::termutil::register_for_resize(sighandler::sig_resize);
 
     let mut state = AppState {
-        course: "AI3".to_string(),
+        course: course.to_string(),
 
         theme: select_colorscheme(),
         day: {
@@ -92,8 +144,10 @@ fn main() -> Result<(), String> {
             today
         },
 
-        canteen: Default::default(),
-        timetable: Default::default(),
+        data : AppData {
+            canteen: Default::default(),
+            timetable: Default::default(),
+        },
 
         loading: (0, 0),
 
@@ -101,6 +155,13 @@ fn main() -> Result<(), String> {
 
         display_mode: 0,
     };
+
+    match cache::read_cache(course) {
+        Ok(Some(data)) => state.data = data,
+        Ok(None) => (),
+        Err(e) => writeln!(log, "Error reading cache: {}", e).unwrap(),
+    }
+
 
     setup_datasources(&state, &outgoing);
     setup_keyboard_datasource(&outgoing);
@@ -115,9 +176,9 @@ fn main() -> Result<(), String> {
         } else if state.display_mode % 3 == 0 {
             render(size.clone(), &state);
         } else if state.display_mode % 3 == 2 {
-            table_render(size.clone(), &state, &state.timetable);
+            table_render(size.clone(), &state, &state.data.timetable);
         } else {
-            table_render(size.clone(), &state, &state.canteen);
+            table_render(size.clone(), &state, &state.data.canteen);
         };
 
         // process
@@ -149,13 +210,18 @@ fn main() -> Result<(), String> {
                     _ => (),
                 }
             }
-            Message::Error(e) => handle_error(&mut state, e),
+            Message::Error(e) => {
+                if log.len() < 8192 {
+                    writeln!(log, "Error: {}", e).unwrap();
+                }
+                handle_error(&mut state, e)
+            },
 
             Message::CanteenData(data) => {
-                state.canteen.extend(data);
+                state.data.canteen.extend(data);
             }
             Message::TimetableData(data) => {
-                state.timetable.extend(data);
+                state.data.timetable.extend(data);
             }
 
             Message::Resize(w, h) => {
@@ -165,6 +231,14 @@ fn main() -> Result<(), String> {
     }
 
     tui::termutil::term_unsetup();
+
+    match cache::write_cache(&state.data, course) {
+        Ok(()) => (),
+        Err(e) => writeln!(log, "Error writing cache: {}", e).unwrap(),
+    }
+
+    eprintln!("{}", log);
+
     Ok(())
 }
 
@@ -272,8 +346,8 @@ fn render(size: (isize, isize), state: &AppState) {
 
     let theme = &state.theme;
     let today = &state.day;
-    let canteen = &state.canteen;
-    let timetable = &state.timetable;
+    let canteen = &state.data.canteen;
+    let timetable = &state.data.timetable;
 
     let mut table_widget = GridV::new();
     for (i,d) in timetable.get(&today).unwrap_or(&Default::default()).iter().enumerate() {
