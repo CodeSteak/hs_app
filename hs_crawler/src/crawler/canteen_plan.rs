@@ -16,7 +16,7 @@ use reqwest;
 type CanteenPlan = HashMap<Date<Local>, Vec<String>>;
 
 const URL_THIS_WEEK: &str = "https://www.swfr.de/essen-trinken/speiseplaene/mensa-offenburg/";
-const URL_NEXT_WEEK : &str = "https://www.swfr.de/essen-trinken/speiseplaene/mensa-offenburg/?tx_swfrspeiseplan_pi1[weekToShow]=1";
+//const URL_NEXT_WEEK : &str = "https://www.swfr.de/essen-trinken/speiseplaene/mensa-offenburg/?tx_swfrspeiseplan_pi1[weekToShow]=1";
 
 use std::sync::mpsc::Receiver;
 pub fn get_async(q: Query) -> Receiver<Result<CanteenPlan, String>> {
@@ -29,10 +29,32 @@ pub enum Query {
     NextWeek,
 }
 
+fn get_url_next_week() -> Result<String, DirtyError> {
+    let res = reqwest::get(URL_THIS_WEEK)?;
+
+    if res.status() != 200 {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "Didn't get course table.").into());
+    }
+
+    let mut html = String::new();
+    res.take(MAX_RESPONSE_SIZE).read_to_string(&mut html)?;
+
+    let dom = Document::from(&*html);
+
+    let menu_url = dom.find(And(Class("next-week"), Class("text-right")))
+        .next().unwrap() // todo
+        .attr("href").unwrap()
+        .to_owned();
+
+
+    Ok(format!("https://www.swfr.de{}", menu_url))
+}
+
+
 pub fn get(q: Query) -> Result<CanteenPlan, DirtyError> {
     let res = match q {
         Query::ThisWeek => reqwest::get(URL_THIS_WEEK)?,
-        Query::NextWeek => reqwest::get(URL_NEXT_WEEK)?,
+        Query::NextWeek => reqwest::get(&get_url_next_week()?)?,
     };
 
     if res.status() != 200 {

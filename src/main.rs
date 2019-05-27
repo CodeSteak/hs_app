@@ -1,4 +1,4 @@
-#![deny(warnings)]
+//#![deny(warnings)]
 //^ Warnings as Errors.
 #![allow(dead_code)]
 
@@ -80,7 +80,7 @@ fn main() -> Result<(), String> {
             .short("c")
             .long("course")
             .takes_value(true)
-            .default_value("AI3")
+            .default_value("AI4")
             .help("Sets course to fetch timetable from.")
         ).arg(
             Arg::with_name("simplecolor")
