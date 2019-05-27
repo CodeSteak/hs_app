@@ -1,3 +1,3 @@
 # HS APP
 
-This is a Timetable + Canteenplan for the Hochschule Offenburg for your Terminal.
+All your need for Hochschule Offenburg for your terminal.
