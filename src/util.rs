@@ -2,7 +2,7 @@ extern crate std;
 use chrono::{Date, Datelike, Local, Weekday};
 use std::error::Error;
 
-pub type DirtyError = Box<Error>;
+pub type DirtyError = Box<dyn Error>;
 
 pub(crate) fn last_monday() -> Date<Local> {
     let mut now = Local::today();

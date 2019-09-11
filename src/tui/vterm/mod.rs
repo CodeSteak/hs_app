@@ -188,15 +188,14 @@ pub trait Widget {
 
     fn render_to_stdout(&mut self) {
         use std::fmt::Write;
-        use std::string::String;
 
         let mut out = String::new();
         let mut last_foreground = Color::None;
         let mut last_background = Color::None;
 
-        write!(out, "\x1B[0;0H"); // Goto Home
-        write!(out, "{}", last_foreground.to_ansi_foreground());
-        write!(out, "{}", last_background.to_ansi_foreground());
+        write!(out, "\x1B[0;0H").unwrap(); // Goto Home
+        write!(out, "{}", last_foreground.to_ansi_foreground()).unwrap();
+        write!(out, "{}", last_background.to_ansi_foreground()).unwrap();
 
         let (w, h) = self.size();
 
@@ -214,28 +213,29 @@ pub trait Widget {
                     if last_foreground == Color::None {
                         last_background = Color::None;
                     }
-                    write!(out, "{}", last_foreground.to_ansi_foreground());
+
+                    write!(out, "{}", last_foreground.to_ansi_foreground()).unwrap();
                 }
 
                 if last_background != vch.background {
                     last_background = vch.background;
 
-                    write!(out, "{}", last_background.to_ansi_background());
+                    write!(out, "{}", last_background.to_ansi_background()).unwrap();
 
                     if last_background == Color::None {
-                        write!(out, "{}", last_foreground.to_ansi_foreground());
+                        write!(out, "{}", last_foreground.to_ansi_foreground()).unwrap();
                     }
                 }
-                write!(out, "{}", vch.char);
+                write!(out, "{}", vch.char).unwrap();
             }
 
             if y != h - 1 {
-                write!(out, "\n");
+                write!(out, "\n").unwrap();
             }
         }
 
         let mut stdout = io::stdout();
-        write!(stdout, "{}", out);
-        let _ = stdout.flush();
+        write!(stdout, "{}", out).unwrap();
+        stdout.flush().unwrap();
     }
 }

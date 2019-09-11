@@ -38,7 +38,7 @@ pub fn get(q: Query, course: &str) -> Result<Timetable, DirtyError> {
 
     match q {
         Query::ThisWeek => {
-            let mut date = last_monday();
+            let date = last_monday();
             download_timetable_from_url(&date, course_url)
         }
         Query::NextWeek => {

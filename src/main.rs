@@ -495,7 +495,6 @@ fn table_render(
 }
 
 fn german_weekday(day: chrono::Weekday) -> &'static str {
-    use chrono::Weekday;
     match day {
         Weekday::Mon => "Montag",
         Weekday::Tue => "Dienstag",
