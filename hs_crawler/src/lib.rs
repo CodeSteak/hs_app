@@ -1,5 +1,3 @@
-#![deny(warnings)]
-
 extern crate reqwest;
 extern crate select;
 extern crate chrono;

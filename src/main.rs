@@ -1,5 +1,3 @@
-//#![deny(warnings)]
-//^ Warnings as Errors.
 #![allow(dead_code)]
 
 #[macro_use]
