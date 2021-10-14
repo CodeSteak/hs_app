@@ -78,7 +78,7 @@ fn main() -> Result<(), String> {
             .short("c")
             .long("course")
             .takes_value(true)
-            .default_value("AI4")
+            .default_value("INFM2")
             .help("Sets course to fetch timetable from.")
         ).arg(
             Arg::with_name("simplecolor")
