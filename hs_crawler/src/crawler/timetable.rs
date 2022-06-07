@@ -1,6 +1,6 @@
 use super::*;
 
-use ::util::*;
+use crate::util::*;
 
 use std::io;
 use std::io::BufRead;
@@ -59,7 +59,7 @@ fn download_timetable_from_url(
 ) -> Result<Timetable, DirtyError> {
     let mut date = start_date.clone();
 
-    let res = reqwest::get(url)?;
+    let res = reqwest::blocking::get(url)?;
 
     if res.status() != 200 {
         return Err(io::Error::new(io::ErrorKind::InvalidData, "Didn't get course table.").into());
@@ -110,7 +110,7 @@ fn download_timetable_index() -> Result<LowercaseCourseToUrl, DirtyError> {
     const LINK_MIDDLE: &str = "\">";
     const LINK_END: &str = "</a>";
 
-    let res = reqwest::get(TIMETABLE_INDEX)?;
+    let res = reqwest::blocking::get(TIMETABLE_INDEX)?;
     if res.status() != 200 {
         return Err(io::Error::new(io::ErrorKind::InvalidData, "Didn't get course index.").into());
     }

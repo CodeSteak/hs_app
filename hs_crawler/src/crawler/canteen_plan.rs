@@ -1,6 +1,6 @@
 use super::*;
 
-use ::util::*;
+use crate::util::*;
 
 use std::io;
 use std::io::Read;
@@ -30,7 +30,7 @@ pub enum Query {
 }
 
 fn get_url_next_week() -> Result<String, DirtyError> {
-    let res = reqwest::get(URL_THIS_WEEK)?;
+    let res = reqwest::blocking::get(URL_THIS_WEEK)?;
 
     if res.status() != 200 {
         return Err(io::Error::new(io::ErrorKind::InvalidData, "Didn't get course table.").into());
@@ -53,8 +53,8 @@ fn get_url_next_week() -> Result<String, DirtyError> {
 
 pub fn get(q: Query) -> Result<CanteenPlan, DirtyError> {
     let res = match q {
-        Query::ThisWeek => reqwest::get(URL_THIS_WEEK)?,
-        Query::NextWeek => reqwest::get(&get_url_next_week()?)?,
+        Query::ThisWeek => reqwest::blocking::get(URL_THIS_WEEK)?,
+        Query::NextWeek => reqwest::blocking::get(&get_url_next_week()?)?,
     };
 
     if res.status() != 200 {

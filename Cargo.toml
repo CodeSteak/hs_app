@@ -2,6 +2,7 @@
 name = "hs_app"
 version = "1.0.1"
 authors = ["CodeSteak <codesteak@shellf.art>"]
+edition = "2021"
 
 [dependencies]
 clap = "2.32.0"
