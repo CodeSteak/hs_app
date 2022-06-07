@@ -18,15 +18,15 @@ extern crate dirs;
 extern crate clap;
 
 mod ui;
-use ui::theme::*;
+use crate::ui::theme::*;
 
-use ui::cache;
+use crate::ui::cache;
 
 mod tui;
-use tui::keys::Key;
+use crate::tui::keys::Key;
 
 mod util;
-use util::*;
+use crate::util::*;
 
 use chrono::prelude::*;
 
@@ -243,7 +243,7 @@ fn ui_app(course : &str) -> Result<(), String> {
 mod sighandler {
     use super::Message;
 
-    use tui::keys::Key;
+    use crate::tui::keys::Key;
 
     use std::sync::Mutex;
     use std::sync::mpsc::SyncSender;
@@ -267,7 +267,7 @@ mod sighandler {
     }
     pub extern "C" fn sig_resize(_: i32) {
         unsafe {
-            use tui::termutil::terminal_size;
+            use crate::tui::termutil::terminal_size;
             if let Some((w, h)) = terminal_size() {
                 if let Some(ref mutex) = SIG_CHANNEL {
                     let inner = mutex.lock().unwrap();
@@ -340,7 +340,7 @@ fn setup_datasources(state: &AppState, outgoing: &mpsc::SyncSender<Message>) {
 
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 fn render(size: (isize, isize), state: &AppState) {
-    use tui::*;
+    use crate::tui::*;
 
     let theme = &state.theme;
     let today = &state.day;
@@ -442,7 +442,7 @@ fn table_render(
     state: &AppState,
     content: &HashMap<Date<Local>, Vec<String>>,
 ) {
-    use tui::*;
+    use crate::tui::*;
 
     let theme = &state.theme;
     let mut today = state.day.clone();
@@ -505,7 +505,7 @@ fn german_weekday(day: chrono::Weekday) -> &'static str {
 }
 
 fn render_errors(size: (isize, isize), state: &AppState) {
-    use tui::*;
+    use crate::tui::*;
     let theme = &state.theme;
 
     let mut root = VText::colored(theme.heading, &(state.errors

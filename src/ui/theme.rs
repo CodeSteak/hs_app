@@ -1,4 +1,4 @@
-use ::tui::Color;
+use crate::tui::Color;
 
 use std::env;
 
@@ -49,7 +49,7 @@ pub fn select_colorscheme() -> Theme {
 
 
 mod solarized {
-    use ::tui::Color;
+    use crate::tui::Color;
 
     pub const BASE3: Color = Color::Custom(0xfd, 0xf6, 0xe3);
     pub const BASE2: Color = Color::Custom(0xee, 0xe8, 0xd5);

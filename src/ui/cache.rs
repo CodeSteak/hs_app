@@ -7,7 +7,7 @@ use std::fs::File;
 use dirs;
 use serde_json;
 
-use ::AppData;
+use crate::AppData;
 
 use std::num::Wrapping;
 
