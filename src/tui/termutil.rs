@@ -107,12 +107,12 @@ fn clear_buffer() -> Option<()> {
     use nix::unistd::read;
 
     loop {
-        let mut fd = [PollFd::new(0, EventFlags::POLLIN)];
+        let mut fd = [PollFd::new(0, PollFlags::POLLIN)];
         if let Err(_err) = poll(&mut fd, 0) {
             return None;
         }
 
-        if fd[0].revents()? == EventFlags::POLLIN {
+        if fd[0].revents()? == PollFlags::POLLIN {
             let mut buf = [0u8; 1024];
             let _void = read(1, &mut buf);
         } else {

@@ -110,7 +110,7 @@ pub fn advanced_keys(mut key: [u8; MAX_KEY_LEN], filled: usize) -> (Key, [u8; MA
 fn is_data_on_stdin() -> bool {
     use nix::poll::*;
 
-    let mut fd = [PollFd::new(0, EventFlags::POLLIN)];
+    let mut fd = [PollFd::new(0, PollFlags::POLLIN)];
     if let Err(_err) = poll(&mut fd, 0) {
         // Should be more robust this way.
         // May prevent infinite loop;
@@ -118,7 +118,7 @@ fn is_data_on_stdin() -> bool {
     }
 
     match fd[0].revents() {
-        Some(EventFlags::POLLIN) => true,
+        Some(PollFlags::POLLIN) => true,
         _ => false,
     }
 }
